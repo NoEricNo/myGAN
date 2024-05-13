@@ -7,10 +7,9 @@ import torch.distributions as td
 
 class Discriminator(nn.Module):
     def __init__(self, num_movies):
-        self.num_movies = num_movies
         super(Discriminator, self).__init__()
+        self.num_movies = num_movies
         self.fc1 = nn.Linear(num_movies * 6, 512)  # Input layer to handle embedded rating vectors
-        #self.fc2 = nn.Linear(512, 512)  # Additional layer for more nuanced feature extraction
 
         self.main = nn.Sequential(
             nn.LeakyReLU(0.2, inplace=True),
