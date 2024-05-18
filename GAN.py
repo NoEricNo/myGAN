@@ -29,14 +29,13 @@ class GAN(nn.Module):
                 real_data, real_existence = real_data.to(self.device), real_existence.to(self.device)
                 valid = torch.ones((real_data.size(0), 1), device=self.device)
                 fake = torch.zeros((real_data.size(0), 1), device=self.device)
-                fake_ratings, fake_existence = fake_data[:, :, :-1], fake_data[:, :, -1]
 
                 # Generate fake data
                 noise = torch.randn(real_data.size(0), 100, device=self.device)
                 fake_data = self.generator(noise)
+                fake_ratings, fake_existence = fake_data[:, :, :-1], fake_data[:, :, -1]
 
                 # Discriminator step
-
                 self.optimizer_D.zero_grad()
                 real_ratings, real_existence = real_data[:, :, :-1], real_data[:, :, -1]
                 real_loss_ratings = self.criterion_rating(self.discriminator(real_ratings), valid)
@@ -47,14 +46,12 @@ class GAN(nn.Module):
                 d_loss.backward()
                 self.optimizer_D.step()
 
-
                 # Generator step
                 self.optimizer_G.zero_grad()
                 regenerated_validity = self.criterion_rating(self.discriminator(fake_ratings), valid)
                 regenerated_existence = self.criterion_existence(fake_existence, real_existence)
                 g_loss = (regenerated_validity + regenerated_existence) / 2
                 g_loss.backward()
-                self.optimizer_G.step()
                 self.optimizer_G.step()
 
                 if i % 50 == 0:
