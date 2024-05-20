@@ -35,10 +35,22 @@ class MovieLensDataset(Dataset):
         existence = self.existence_matrix.iloc[idx].values
 
         # Convert to torch tensors
-        ratings_tensor = torch.tensor(ratings, dtype=torch.float32).view(1, -1)
-        existence_tensor = torch.tensor(existence, dtype=torch.float32).view(1, -1)
+        ratings_tensor = torch.tensor(ratings, dtype=torch.float32).unsqueeze(-1)  # Shape: (num_movies, 1)
+        existence_tensor = torch.tensor(existence, dtype=torch.float32).unsqueeze(-1)  # Shape: (num_movies, 1)
 
-        combined_tensor = torch.cat([ratings_tensor, existence_tensor], dim=2)
+        # One-hot encode the ratings
+        one_hot_ratings = torch.zeros((ratings_tensor.size(0), 5), dtype=torch.float32)
+        for i, rating in enumerate(ratings_tensor.squeeze(-1)):
+            if rating > 0:
+                one_hot_ratings[i, int(rating) - 1] = 1.0  # Ratings are 1-5
+
+        combined_tensor = torch.cat([one_hot_ratings, existence_tensor], dim=1)  # Shape: (num_movies, 6)
+
+        # Add debug prints to verify shapes
+        #print(f"ratings_tensor shape---: {ratings_tensor.shape}")
+        #print(f"one_hot_ratings shape---: {one_hot_ratings.shape}")
+        #print(f"combined_tensor shape---: {combined_tensor.shape}")
+
         return combined_tensor, existence_tensor
 
 
