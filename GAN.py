@@ -88,8 +88,8 @@ class GAN(nn.Module):
                 total_d_loss += d_loss.item()
                 total_g_loss += g_loss.item()
 
-                if i % 2 == 0:
-                    print(f"Batch {i}/{num_batches}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+                #if i % 2 == 0:
+                    #print(f"Batch {i}/{num_batches}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
             avg_d_loss = total_d_loss / num_batches
             avg_g_loss = total_g_loss / num_batches

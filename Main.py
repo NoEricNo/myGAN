@@ -6,8 +6,8 @@ import torch
 
 # Configuration (Control Panel)
 batch_size = 64  # You can adjust the batch size as needed
-ratings_file = 'ratings.csv'  # Update this with the actual path to your ratings file
-num_epochs = 50  # Set the number of epochs as needed
+ratings_file = 'ratings_25m.csv'  # Update this with the actual path to your ratings file
+num_epochs = 60  # Set the number of epochs as needed
 learning_rate_G = 0.0002  # Learning rate for the generator
 learning_rate_D = 0.0001  # Learning rate for the discriminator
 beta1 = 0.5  # Beta1 for Adam optimizer
@@ -22,6 +22,10 @@ dataloader = data_loader.get_loader()
 num_movies = data_loader.get_num_movies()
 
 # Initialize the GAN model
+if not torch.cuda.is_available():
+    print("GPU not available!")
+else:
+    print("GPU available!")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 generator = Generator(num_movies=num_movies).to(device)
 discriminator = Discriminator(num_movies=num_movies).to(device)

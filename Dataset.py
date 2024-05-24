@@ -1,7 +1,8 @@
 import pandas as pd
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
-
+from scipy.sparse import coo_matrix
 
 class MovieLensDataset(Dataset):
     def __init__(self, ratings_file):
@@ -13,11 +14,8 @@ class MovieLensDataset(Dataset):
         # Load the ratings data
         ratings = pd.read_csv(self.ratings_file)
 
-        # Create a user-item matrix
-        user_item_matrix = ratings.pivot(index='userId', columns='movieId', values='rating')
-
-        # Fill missing values with 0 (no rating)
-        user_item_matrix = user_item_matrix.fillna(0)
+        # Create the user-item matrix in a sparse format
+        user_item_matrix = coo_matrix((ratings['rating'], (ratings['userId'], ratings['movieId'])))
 
         # Extract the existence matrix (binary)
         existence_matrix = (user_item_matrix > 0).astype(float)
@@ -28,31 +26,25 @@ class MovieLensDataset(Dataset):
         return rating_matrix, existence_matrix
 
     def __len__(self):
-        return len(self.rating_matrix)
+        return self.rating_matrix.shape[0]
 
     def __getitem__(self, idx):
-        ratings = self.rating_matrix.iloc[idx].values
-        existence = self.existence_matrix.iloc[idx].values
-
-        # Convert to torch tensors
-        ratings_tensor = torch.tensor(ratings, dtype=torch.float32).unsqueeze(-1)  # Shape: (num_movies, 1)
-        existence_tensor = torch.tensor(existence, dtype=torch.float32).unsqueeze(-1)  # Shape: (num_movies, 1)
+        ratings = self.rating_matrix.getrow(idx).toarray().squeeze()
+        existence = self.existence_matrix.getrow(idx).toarray().squeeze()
 
         # One-hot encode the ratings
-        one_hot_ratings = torch.zeros((ratings_tensor.size(0), 5), dtype=torch.float32)
-        for i, rating in enumerate(ratings_tensor.squeeze(-1)):
+        one_hot_ratings = np.zeros((len(ratings), 5), dtype=np.float32)
+        for i, rating in enumerate(ratings):
             if rating > 0:
                 one_hot_ratings[i, int(rating) - 1] = 1.0  # Ratings are 1-5
 
-        combined_tensor = torch.cat([one_hot_ratings, existence_tensor], dim=1)  # Shape: (num_movies, 6)
+        # Convert to tensors
+        ratings_tensor = torch.tensor(one_hot_ratings)
+        existence_tensor = torch.tensor(existence).unsqueeze(-1)
 
-        # Add debug prints to verify shapes
-        #print(f"ratings_tensor shape---: {ratings_tensor.shape}")
-        #print(f"one_hot_ratings shape---: {one_hot_ratings.shape}")
-        #print(f"combined_tensor shape---: {combined_tensor.shape}")
+        combined_tensor = torch.cat([ratings_tensor, existence_tensor], dim=1)
 
-        return combined_tensor, existence_tensor
-
+        return combined_tensor
 
 class MovieLensDataLoader:
     def __init__(self, ratings_file, batch_size):
@@ -63,4 +55,4 @@ class MovieLensDataLoader:
         return self.dataloader
 
     def get_num_movies(self):
-        return self.dataset.num_movies
+        return self.dataset.rating_matrix.shape[1]
