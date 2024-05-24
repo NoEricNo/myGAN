@@ -1,98 +1,75 @@
 import torch
-from torch import nn
-import torchvision.utils as vutils
-import matplotlib.pyplot as plt
+import torch.nn as nn
+import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
 
-def save_generator_output(generator, epoch, batch, device, num_images=64, z_dim=100, save=True, show=False):
-    with torch.no_grad():
-        generator.eval()
-        fixed_noise = torch.randn(num_images, z_dim, device=device)
-        fake_data = generator(fixed_noise).detach().cpu()
-        generator.train()
-
-class GAN(nn.Module):
-    def __init__(self, generator, discriminator, device, num_movies, learning_rate_G, learning_rate_D, beta1, beta2, label_smoothing, noise_factor, update_D_frequency):
-        super(GAN, self).__init__()
+class GAN:
+    def __init__(self, generator, discriminator, device, num_movies, lr_g, lr_d, beta1, beta2, label_smoothing, noise_factor, update_d_freq):
         self.generator = generator
         self.discriminator = discriminator
         self.device = device
         self.num_movies = num_movies
-        self.optimizer_G = torch.optim.Adam(self.generator.parameters(), lr=learning_rate_G, betas=(beta1, beta2))
-        self.optimizer_D = torch.optim.Adam(self.discriminator.parameters(), lr=learning_rate_D, betas=(beta1, beta2))
-        self.criterion_rating = nn.CrossEntropyLoss()
-        self.criterion_existence = nn.BCELoss()
         self.label_smoothing = label_smoothing
         self.noise_factor = noise_factor
-        self.update_D_frequency = update_D_frequency
+        self.update_d_freq = update_d_freq
 
-    def train(self, dataloader, num_epochs):
+        self.criterion_validity = nn.BCELoss()
+        self.criterion_existence = nn.BCELoss()
+        self.optimizer_g = optim.Adam(self.generator.parameters(), lr=lr_g, betas=(beta1, beta2))
+        self.optimizer_d = optim.Adam(self.discriminator.parameters(), lr=lr_d, betas=(beta1, beta2))
+
+    def train(self, dataloader, num_epochs, accumulation_steps, scaler):
         for epoch in range(num_epochs):
-            print(f"Epoch {epoch + 1}/{num_epochs}")
-            total_d_loss = 0
-            total_g_loss = 0
-            num_batches = len(dataloader)
+            print(f"Epoch {epoch+1}/{num_epochs}")
+            for i, real_data in enumerate(dataloader):
+                real_data = real_data.to(self.device).float()
+                batch_size = real_data.size(0)
 
-            for i, (real_data, real_existence) in enumerate(dataloader):
-                real_data, real_existence = real_data.to(self.device), real_existence.to(self.device)
-                valid = torch.ones((real_data.size(0), 1), device=self.device) * self.label_smoothing  # Label smoothing
-                fake = torch.zeros((real_data.size(0), 1), device=self.device)
-
-                # Generate fake data
-                noise = torch.randn(real_data.size(0), 100, device=self.device)
+                # Train Discriminator
+                noise = torch.randn(batch_size, 100, device=self.device).float()
                 fake_data = self.generator(noise)
-                fake_ratings, fake_existence = fake_data[:, :, :-1], fake_data[:, :, -1]
 
-                # Add noise to real data
-                real_data_noisy = real_data + self.noise_factor * torch.randn_like(real_data)
+                real_validity, real_existence_pred = self.discriminator(real_data)
+                fake_validity, fake_existence_pred = self.discriminator(fake_data.detach())
 
-                # Discriminator step
-                if i % self.update_D_frequency == 0:  # Update discriminator less frequently
-                    self.optimizer_D.zero_grad()
-                    real_ratings, real_existence = real_data_noisy[:, :, :-1], real_data_noisy[:, :, -1]
+                real_labels = torch.ones_like(real_validity, device=self.device) * self.label_smoothing
+                fake_labels = torch.zeros_like(fake_validity, device=self.device)
 
-                    # Print target tensor values for debugging
-                    #print(f"real_existence values: {real_existence.min().item()}, {real_existence.max().item()}")
+                d_loss_real_validity = self.criterion_validity(real_validity, real_labels)
+                d_loss_fake_validity = self.criterion_validity(fake_validity, fake_labels)
+                d_loss_real_existence = self.criterion_existence(real_existence_pred, real_data[:, :, -1])
+                d_loss_fake_existence = self.criterion_existence(fake_existence_pred, fake_data[:, :, -1])
 
-                    # Get discriminator outputs
-                    real_validity, real_existence_pred = self.discriminator(real_ratings)
-                    fake_validity, fake_existence_pred = self.discriminator(fake_ratings.detach())
+                d_loss = (d_loss_real_validity + d_loss_fake_validity + d_loss_real_existence + d_loss_fake_existence) / 4
 
-                    # Print predicted tensor values for debugging
-                    #print(f"real_existence_pred values: {real_existence_pred.min().item()}, {real_existence_pred.max().item()}")
+                d_loss = d_loss / accumulation_steps
+                d_loss.backward(retain_graph=True)
 
-                    # Ensure target tensor values are between 0 and 1
-                    real_existence = torch.clamp(real_existence, 0, 1)
+                if (i + 1) % accumulation_steps == 0:
+                    self.optimizer_d.step()
+                    self.optimizer_d.zero_grad()
 
-                    # Compute discriminator losses
-                    real_loss_ratings = self.criterion_rating(real_validity, valid)
-                    real_loss_existence = self.criterion_existence(real_existence_pred, real_existence.view(-1, self.num_movies))
-                    fake_loss_ratings = self.criterion_rating(fake_validity, fake)
-                    fake_loss_existence = self.criterion_existence(fake_existence_pred, fake_existence.view(-1, self.num_movies))
+                # Train Generator
+                if i % self.update_d_freq == 0:
+                    noise = torch.randn(batch_size, 100, device=self.device).float()
+                    fake_data = self.generator(noise)
+                    validity, existence_pred = self.discriminator(fake_data)
 
-                    # Total discriminator loss
-                    d_loss = (real_loss_ratings + real_loss_existence + fake_loss_ratings + fake_loss_existence) / 4
-                    d_loss.backward(retain_graph=True)
-                    self.optimizer_D.step()
+                    real_labels = torch.ones_like(validity, device=self.device)
 
-                # Generator step
-                self.optimizer_G.zero_grad()
-                regenerated_validity, regenerated_existence_pred = self.discriminator(fake_ratings)
-                g_loss_validity = self.criterion_rating(regenerated_validity, valid)
-                g_loss_existence = self.criterion_existence(regenerated_existence_pred, real_existence.view(-1, self.num_movies))
+                    g_loss_validity = self.criterion_validity(validity, real_labels)
+                    g_loss_existence = self.criterion_existence(existence_pred, fake_data[:, :, -1])
 
-                # Total generator loss
-                g_loss = (g_loss_validity + g_loss_existence) / 2
-                g_loss.backward()
-                self.optimizer_G.step()
+                    g_loss = (g_loss_validity + g_loss_existence) / 2
 
-                total_d_loss += d_loss.item()
-                total_g_loss += g_loss.item()
+                    g_loss = g_loss / accumulation_steps
+                    g_loss.backward()
 
-                #if i % 2 == 0:
-                    #print(f"Batch {i}/{num_batches}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+                    if (i + 1) % accumulation_steps == 0:
+                        self.optimizer_g.step()
+                        self.optimizer_g.zero_grad()
 
-            avg_d_loss = total_d_loss / num_batches
-            avg_g_loss = total_g_loss / num_batches
-            print(f"Epoch {epoch + 1} completed. Avg D Loss: {avg_d_loss:.4f}, Avg G Loss: {avg_g_loss:.4f}")
+                if i % 10 == 0:
+                    print(f"Batch {i}/{len(dataloader)}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
-            save_generator_output(self.generator, epoch, num_batches, self.device)
+            print(f"Epoch {epoch+1} completed. Avg D Loss: {d_loss.item():.4f}, Avg G Loss: {g_loss.item():.4f}")

@@ -20,6 +20,9 @@ class MovieLensDataset(Dataset):
         # Extract the existence matrix (binary)
         existence_matrix = (user_item_matrix > 0).astype(float)
 
+        # Create the existence matrix in a sparse format
+        existence_matrix = coo_matrix((np.ones_like(ratings['rating']), (ratings['userId'], ratings['movieId'])))
+
         # Extract the rating matrix
         rating_matrix = user_item_matrix
 
@@ -29,8 +32,8 @@ class MovieLensDataset(Dataset):
         return self.rating_matrix.shape[0]
 
     def __getitem__(self, idx):
-        ratings = self.rating_matrix.getrow(idx).toarray().squeeze()
-        existence = self.existence_matrix.getrow(idx).toarray().squeeze()
+        ratings = self.rating_matrix.getrow(idx).toarray().squeeze().astype(np.float32)  # Convert to float32
+        existence = self.existence_matrix.getrow(idx).toarray().squeeze().astype(np.float32)  # Convert to float32
 
         # One-hot encode the ratings
         one_hot_ratings = np.zeros((len(ratings), 5), dtype=np.float32)
@@ -39,12 +42,13 @@ class MovieLensDataset(Dataset):
                 one_hot_ratings[i, int(rating) - 1] = 1.0  # Ratings are 1-5
 
         # Convert to tensors
-        ratings_tensor = torch.tensor(one_hot_ratings)
-        existence_tensor = torch.tensor(existence).unsqueeze(-1)
+        ratings_tensor = torch.tensor(one_hot_ratings, dtype=torch.float32)  # Ensure float32
+        existence_tensor = torch.tensor(existence, dtype=torch.float32).unsqueeze(-1)  # Ensure float32
 
         combined_tensor = torch.cat([ratings_tensor, existence_tensor], dim=1)
 
         return combined_tensor
+
 
 class MovieLensDataLoader:
     def __init__(self, ratings_file, batch_size):
