@@ -15,12 +15,22 @@ if __name__ == "__main__":
     batch_size = 64
     chunk_size = 2000  # Adjusted to match the maximum chunk size
 
+    # Tuneable parameters
+    noise_dim = 100
+    generator_fc1_size = 128
+    generator_rating_gen_sizes = [256, 2000]  # [hidden_size, output_size]
+    generator_existence_gen_size = 2000
+
+    discriminator_input_size = chunk_size * 2
+    discriminator_fc1_size = 512
+    discriminator_main_sizes = [256, 256]  # [hidden_size1, hidden_size2]
+    discriminator_existence_output_size = chunk_size
+
     data_loader = MovieLensDataLoader(ratings_file, batch_size, chunk_size)
     num_chunks = data_loader.num_chunks
-    dynamic_input_size = chunk_size * 2  # Adjusted to match combined input size from Generator (ratings + existence)
 
-    generator = Generator().to(device)
-    discriminator = Discriminator(input_size=dynamic_input_size).to(device)  # Ensure this matches Generator output
+    generator = Generator(noise_dim, generator_fc1_size, generator_rating_gen_sizes, generator_existence_gen_size).to(device)
+    discriminator = Discriminator(discriminator_input_size, discriminator_fc1_size, discriminator_main_sizes, discriminator_existence_output_size).to(device)
     gan = GAN(generator, discriminator)
 
     num_epochs = 60
