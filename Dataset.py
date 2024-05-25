@@ -1,62 +1,47 @@
 import pandas as pd
-import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
-from scipy.sparse import coo_matrix
+from torch.utils.data import Dataset, DataLoader
+from scipy.sparse import coo_matrix, csr_matrix
 
 class MovieLensDataset(Dataset):
-    def __init__(self, ratings_file):
+    def __init__(self, ratings_file, chunk_size):
         self.ratings_file = ratings_file
-        self.rating_matrix, self.existence_matrix = self.load_data()
-        self.num_movies = self.rating_matrix.shape[1]
+        self.chunk_size = chunk_size
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.rating_matrix, self.existence_matrix, self.num_movies = self.load_data()
+        self.current_chunk_ratings = None
+        self.current_chunk_existence = None
 
     def load_data(self):
-        # Load the ratings data
         ratings = pd.read_csv(self.ratings_file)
+        user_item_matrix = coo_matrix((ratings['rating'], (ratings['userId'] - 1, ratings['movieId'] - 1)),
+                                      shape=(ratings['userId'].max(), ratings['movieId'].max())).tocsr()
+        existence_matrix = coo_matrix((ratings['rating'] > 0, (ratings['userId'] - 1, ratings['movieId'] - 1)),
+                                      shape=(ratings['userId'].max(), ratings['movieId'].max())).tocsr()
+        return user_item_matrix, existence_matrix, ratings['movieId'].max()
 
-        # Create the user-item matrix in a sparse format
-        user_item_matrix = coo_matrix((ratings['rating'], (ratings['userId'], ratings['movieId'])))
-
-        # Extract the existence matrix (binary)
-        existence_matrix = (user_item_matrix > 0).astype(float)
-
-        # Create the existence matrix in a sparse format
-        existence_matrix = coo_matrix((np.ones_like(ratings['rating']), (ratings['userId'], ratings['movieId'])))
-
-        # Extract the rating matrix
-        rating_matrix = user_item_matrix
-
-        return rating_matrix, existence_matrix
+    def set_chunk(self, chunk_idx):
+        start_idx = chunk_idx * self.chunk_size
+        end_idx = min((chunk_idx + 1) * self.chunk_size, self.num_movies)
+        self.current_chunk_ratings = torch.tensor(self.rating_matrix[:, start_idx:end_idx].toarray(), dtype=torch.float32).to(self.device)
+        self.current_chunk_existence = torch.tensor(self.existence_matrix[:, start_idx:end_idx].toarray(), dtype=torch.float32).to(self.device)
+        #print(f"Set chunk {chunk_idx}: Ratings shape {self.current_chunk_ratings.shape}, Existence shape {self.current_chunk_existence.shape}")
 
     def __len__(self):
-        return self.rating_matrix.shape[0]
+        return self.current_chunk_ratings.shape[0]
 
     def __getitem__(self, idx):
-        ratings = self.rating_matrix.getrow(idx).toarray().squeeze().astype(np.float32)  # Convert to float32
-        existence = self.existence_matrix.getrow(idx).toarray().squeeze().astype(np.float32)  # Convert to float32
-
-        # One-hot encode the ratings
-        one_hot_ratings = np.zeros((len(ratings), 5), dtype=np.float32)
-        for i, rating in enumerate(ratings):
-            if rating > 0:
-                one_hot_ratings[i, int(rating) - 1] = 1.0  # Ratings are 1-5
-
-        # Convert to tensors
-        ratings_tensor = torch.tensor(one_hot_ratings, dtype=torch.float32)  # Ensure float32
-        existence_tensor = torch.tensor(existence, dtype=torch.float32).unsqueeze(-1)  # Ensure float32
-
-        combined_tensor = torch.cat([ratings_tensor, existence_tensor], dim=1)
-
-        return combined_tensor
-
+        return self.current_chunk_ratings[idx], self.current_chunk_existence[idx]
 
 class MovieLensDataLoader:
-    def __init__(self, ratings_file, batch_size):
-        self.dataset = MovieLensDataset(ratings_file)
-        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=True)
+    def __init__(self, ratings_file, batch_size, chunk_size):
+        self.dataset = MovieLensDataset(ratings_file, chunk_size)
+        self.batch_size = batch_size
+        self.chunk_size = chunk_size
+        self.num_chunks = (self.dataset.num_movies + chunk_size - 1) // chunk_size
+
+    def set_chunk(self, chunk_idx):
+        self.dataset.set_chunk(chunk_idx)
 
     def get_loader(self):
-        return self.dataloader
-
-    def get_num_movies(self):
-        return self.dataset.rating_matrix.shape[1]
+        return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True)
