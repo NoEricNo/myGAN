@@ -21,14 +21,17 @@ def setup_logger(log_file):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ratings_file = 'datasets/ratings_100k.csv'
+    # File paths
+    ratings_file = 'datasets/ratings_1m.csv'
     if not os.path.exists(ratings_file):
         raise FileNotFoundError(f"The file {ratings_file} does not exist. Please check the file path.")
 
+    # Data loading parameters
     batch_size = 128
     chunk_size = 4000  # Adjusted to match the maximum chunk size
 
-    # Tuneable parameters
+    # Tune-able parameters
+
     noise_dim = 100
     generator_fc1_size = 128
     generator_rating_gen_sizes = [256, 2000]  # [hidden_size, max_output_size]
@@ -36,15 +39,23 @@ if __name__ == "__main__":
 
     discriminator_fc1_size = 512
     discriminator_main_sizes = [256, 256]  # [hidden_size1, hidden_size2]
+    discriminator_dropout_rate = 0.3
 
+    # Training parameters
+    learning_rate_G = 0.0002
+    learning_rate_D = 0.0002
+    betas = (0.5, 0.999)
+    num_epochs = 60
+    verbose = 0
+
+    # Data Loader
     data_loader = MovieLensDataLoader(ratings_file, batch_size, chunk_size)
     num_chunks = data_loader.num_chunks
 
+    # Model Initialization
     generator = Generator(noise_dim, generator_fc1_size, generator_rating_gen_sizes, generator_existence_gen_size).to(device)
-    discriminator = Discriminator(discriminator_fc1_size, discriminator_main_sizes).to(device)
-    gan = GAN(generator, discriminator)
-
-    num_epochs = 60
+    discriminator = Discriminator(discriminator_fc1_size, discriminator_main_sizes, dropout_rate=discriminator_dropout_rate).to(device)
+    gan = GAN(generator, discriminator, learning_rate_G, learning_rate_D, betas)
 
     # Setup logger
     results_dir = 'Results'
@@ -53,6 +64,7 @@ if __name__ == "__main__":
     log_file = os.path.join(results_dir, f'training_log_{timestamp}.log')
     logger = setup_logger(log_file)
 
+    # Training Loop
     for epoch in range(num_epochs):
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
         print(f"Epoch {epoch+1}/{num_epochs}")
@@ -74,9 +86,11 @@ if __name__ == "__main__":
 
             chunk_end_time = time.time()
             chunk_duration = chunk_end_time - chunk_start_time
-            print(f"Chunk Time: {chunk_duration:.2f} seconds")
-            logger.info(f"Chunk Time: {chunk_duration:.2f} seconds")
+            if verbose == 1:
+                print(f"Chunk Time: {chunk_duration:.2f} seconds")
+                logger.info(f"Chunk Time: {chunk_duration:.2f} seconds")
         epoch_end_time = time.time()  # End time for the epoch
         epoch_duration = epoch_end_time - epoch_start_time  # Calculate epoch duration
-        print(f"Epoch Time: {epoch_duration:.2f} seconds")
-        logger.info(f"Epoch Time: {epoch_duration:.2f} seconds")
+        if verbose == 1:
+            print(f"Epoch Time: {epoch_duration:.2f} seconds")
+            logger.info(f"Epoch Time: {epoch_duration:.2f} seconds")

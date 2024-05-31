@@ -2,18 +2,20 @@ import torch
 import torch.nn.functional as F
 import logging
 
+
 class GAN:
-    def __init__(self, generator, discriminator):
+    def __init__(self, generator, discriminator, learning_rate_G, learning_rate_D, betas):
         self.generator = generator
         self.discriminator = discriminator
-        self.optimizer_G = torch.optim.Adam(self.generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-        self.optimizer_D = torch.optim.Adam(self.discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+        self.optimizer_G = torch.optim.Adam(self.generator.parameters(), lr=learning_rate_G, betas=betas)
+        self.optimizer_D = torch.optim.Adam(self.discriminator.parameters(), lr=learning_rate_D, betas=betas)
         self.logger = logging.getLogger()
 
     def train(self, data_loader, accumulation_steps, scaler, chunk_size):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         for i, (real_data, real_existence) in enumerate(data_loader):
+
             real_data = real_data.to(device)
             real_existence = real_existence.to(device)
 
@@ -46,8 +48,9 @@ class GAN:
             g_loss.backward()
             self.optimizer_G.step()
 
-            # Print losses
-            if i%200 == 0:
+            # Print losses and batch duration
+            if i % 200 == 0:
                 print(f"Local Batch {i+1}/{len(data_loader)}: D_loss: {d_loss.item()}, G_loss: {g_loss.item()}")
                 self.logger.info(f"Local Batch {i+1}/{len(data_loader)}: D_loss: {d_loss.item()}, G_loss: {g_loss.item()}")
-            #print(f"Batch {i}: D_loss: {d_loss.item()}, G_loss: {g_loss.item()}")
+
+
