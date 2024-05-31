@@ -9,16 +9,17 @@ class Generator(nn.Module):
             nn.LeakyReLU(0.2, inplace=False),
             nn.Linear(fc1_size, rating_gen_sizes[0]),
             nn.LeakyReLU(0.2, inplace=False),
-            nn.Linear(rating_gen_sizes[0], rating_gen_sizes[1]),
+            nn.Linear(rating_gen_sizes[0], rating_gen_sizes[1]),  # Maximum number of rating features
             nn.Softmax(dim=1)
         )
         self.existence_gen = nn.Sequential(
             nn.LeakyReLU(0.2, inplace=False),
-            nn.Linear(fc1_size, existence_gen_size),
+            nn.Linear(fc1_size, existence_gen_size),  # Maximum number of existence features
             nn.Sigmoid()
         )
 
     def forward(self, noise, chunk_size):
+        device = noise.device
         x = self.fc1(noise)
         ratings = self.rating_gen(x)
         ratings = ratings[:, :chunk_size]  # Adjust to match the chunk size
@@ -26,5 +27,5 @@ class Generator(nn.Module):
         existence = self.existence_gen(x)
         existence = existence[:, :chunk_size]  # Adjust to match the chunk size
         existence = existence.view(existence.size(0), -1)  # Flatten to match Discriminator input
-        combined_output = torch.cat([ratings, existence], dim=1)  # Concatenate along the feature dimension
+        combined_output = torch.cat([ratings, existence], dim=1).to(device)  # Concatenate along the feature dimension and move to device
         return combined_output
