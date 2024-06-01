@@ -1,25 +1,26 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class Generator(nn.Module):
-    def __init__(self, fc1_size, main_sizes, dropout_rate, existence_gen_size):
+    def __init__(self, input_size, fc1_size, main_sizes, existence_gen_size, dropout_rate):
         super(Generator, self).__init__()
-        noise_dim = 100  # Assuming a fixed noise dimension, adjust if needed
-        print(f"Initializing Generator with fc1_size: {fc1_size}, main_sizes: {main_sizes}, dropout_rate: {dropout_rate}, existence_gen_size: {existence_gen_size}")
-        self.fc1 = nn.Linear(noise_dim, fc1_size)
-        self.main = nn.Sequential(
-            nn.Linear(fc1_size, main_sizes[0]),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(dropout_rate),
-            nn.Linear(main_sizes[0], main_sizes[1]),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(dropout_rate),
-            nn.Linear(main_sizes[1], existence_gen_size)
-        )
+        self.input_size = input_size
+        self.fc1 = nn.Linear(input_size, fc1_size)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.main_layers = nn.ModuleList()
+        previous_size = fc1_size
+        for size in main_sizes:
+            self.main_layers.append(nn.Linear(previous_size, size))
+            previous_size = size
+        self.fc_ratings = nn.Linear(previous_size, existence_gen_size)
+        self.fc_existence = nn.Linear(previous_size, existence_gen_size)
 
-    def forward(self, noise):
-        x = self.fc1(noise)
-        x = self.main(x)
-        ratings = x.view(-1, 5)
-        existence = x[:, :1]
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        for layer in self.main_layers:
+            x = torch.relu(layer(x))
+        ratings = self.fc_ratings(x)
+        existence = self.fc_existence(x)
         return ratings, existence

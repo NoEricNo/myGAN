@@ -1,35 +1,25 @@
+import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class Discriminator(nn.Module):
-    def __init__(self, input_size, fc1_size, main_sizes, dropout_rate=0.3):
+    def __init__(self, input_size, fc1_size, main_sizes, dropout_rate):
         super(Discriminator, self).__init__()
-        self.fc1_size = fc1_size
-        self.main_sizes = main_sizes
-        self.fc1 = nn.Linear(input_size, fc1_size)
+        self.fc1 = nn.Linear(input_size * 2, fc1_size)
         self.main = nn.Sequential(
             nn.Linear(fc1_size, main_sizes[0]),
-            nn.ReLU(),
+            nn.LeakyReLU(0.2),
             nn.Dropout(dropout_rate),
             nn.Linear(main_sizes[0], main_sizes[1]),
-            nn.ReLU(),
+            nn.LeakyReLU(0.2),
             nn.Dropout(dropout_rate)
         )
-        self.rating_output = nn.Linear(main_sizes[1], 1)
-        self.existence_output_size = main_sizes[1] // 2
-        self.existence_output = nn.Sequential(
-            nn.Linear(main_sizes[1], self.existence_output_size),
-            nn.Sigmoid()
-        )
+        self.validity = nn.Linear(main_sizes[1], 1)
+        self.existence = nn.Linear(main_sizes[1], input_size)  # Modify this line to match the shape
 
-    def forward(self, input_data):
-        print(f"Discriminator input shape: {input_data.shape}")
-        x = self.fc1(input_data)
-        print(f"After fc1 shape: {x.shape}")
+    def forward(self, ratings, existence):
+        x = torch.cat((ratings, existence), dim=1)
+        x = torch.relu(self.fc1(x))
         x = self.main(x)
-        print(f"After main shape: {x.shape}")
-        rating_validity = self.rating_output(x)
-        print(f"Rating validity shape: {rating_validity.shape}")
-        existence_prediction = self.existence_output(x)
-        print(f"Existence prediction shape: {existence_prediction.shape}")
-        return rating_validity, existence_prediction
+        validity = self.validity(x)
+        existence_pred = self.existence(x)
+        return validity, existence_pred
