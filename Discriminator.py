@@ -1,45 +1,35 @@
-import torch
-from torch import nn
-
+import torch.nn as nn
+import torch.nn.functional as F
 
 class Discriminator(nn.Module):
-    def __init__(self, fc1_size, main_sizes, dropout_rate=0.3):
+    def __init__(self, input_size, fc1_size, main_sizes, dropout_rate=0.3):
         super(Discriminator, self).__init__()
         self.fc1_size = fc1_size
         self.main_sizes = main_sizes
-        self.dropout_rate = dropout_rate
-
+        self.fc1 = nn.Linear(input_size, fc1_size)
         self.main = nn.Sequential(
-            nn.LeakyReLU(0.2, inplace=False),
-            nn.Dropout(self.dropout_rate),
             nn.Linear(fc1_size, main_sizes[0]),
-            nn.LeakyReLU(0.2, inplace=False),
-            nn.Dropout(self.dropout_rate),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
             nn.Linear(main_sizes[0], main_sizes[1]),
-            nn.LeakyReLU(0.2, inplace=False),
-            nn.Dropout(self.dropout_rate),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate)
         )
-
-        self.rating_output = nn.Sequential(
-            nn.Linear(main_sizes[1], 1),
+        self.rating_output = nn.Linear(main_sizes[1], 1)
+        self.existence_output_size = main_sizes[1] // 2
+        self.existence_output = nn.Sequential(
+            nn.Linear(main_sizes[1], self.existence_output_size),
             nn.Sigmoid()
         )
 
-    def forward(self, ratings):
-        device = ratings.device
-        input_size = ratings.size(1)
-
-        fc1 = nn.Linear(input_size, self.fc1_size).to(device)
-
-        existence_output_size = input_size // 2
-        existence_output = nn.Sequential(
-            nn.Linear(self.main_sizes[1], existence_output_size),
-            nn.Sigmoid()
-        ).to(device)
-
-        x = ratings.view(ratings.size(0), -1)  # Flatten the input
-        x = fc1(x)
+    def forward(self, input_data):
+        print(f"Discriminator input shape: {input_data.shape}")
+        x = self.fc1(input_data)
+        print(f"After fc1 shape: {x.shape}")
         x = self.main(x)
+        print(f"After main shape: {x.shape}")
         rating_validity = self.rating_output(x)
-        existence_prediction = existence_output(x)
+        print(f"Rating validity shape: {rating_validity.shape}")
+        existence_prediction = self.existence_output(x)
+        print(f"Existence prediction shape: {existence_prediction.shape}")
         return rating_validity, existence_prediction
