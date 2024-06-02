@@ -49,8 +49,15 @@ data_loader = MovieLensDataLoader(ratings_file, batch_size, chunk_size)
 # Initialize models
 generator = Generator(input_size=input_size, fc1_size=fc1_size, main_sizes=main_sizes,
                       dropout_rate=dropout_rate, existence_gen_size=existence_gen_size).to(device)
-discriminator = Discriminator(input_size=existence_gen_size, fc1_size=fc1_size, main_sizes=main_sizes,
-                              dropout_rate=dropout_rate).to(device)
+discriminator = Discriminator(
+    ratings_size=existence_gen_size,
+    existence_size=existence_gen_size,
+    user_id_size=1,  # Assuming each user ID is a single value
+    movie_id_size=1,  # Assuming each movie ID is a single value
+    fc1_size=fc1_size,
+    main_sizes=main_sizes,
+    dropout_rate=dropout_rate
+).to(device)
 
 # Loss function
 criterion = nn.BCEWithLogitsLoss()

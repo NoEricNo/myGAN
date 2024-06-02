@@ -17,6 +17,7 @@ class Generator(nn.Module):
         self.fc_existence = nn.Linear(previous_size, existence_gen_size)
 
     def forward(self, x):
+        x = x.float()
         x = torch.relu(self.fc1(x))
         x = self.dropout(x)
         for layer in self.main_layers:

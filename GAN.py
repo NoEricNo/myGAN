@@ -42,19 +42,30 @@ class GAN(nn.Module):
                 if chunk_idx >= num_chunks:
                     break
 
-                for real_data, real_existence in chunk_loader:
-                    real_data, real_existence = real_data.to(self.device), real_existence.to(self.device)
+                for real_data, existence, user_ids, movie_ids in chunk_loader:
+                    real_data = real_data.float().to(self.device)
+                    existence = existence.float().to(self.device)
+                    user_ids = user_ids.float().to(self.device).view(-1, 1)  # Ensure 2D without repeating
+                    movie_ids = movie_ids.float().to(self.device).view(-1, 1)  # Ensure 2D without repeating
+
+                    print(f"Real data shape: {real_data.shape}")
+                    print(f"Existence shape: {existence.shape}")
+                    print(f"User IDs shape: {user_ids.shape}")
+                    print(f"Movie IDs shape: {movie_ids.shape}")
 
                     # Discriminator Training
                     self.optimizer_d.zero_grad()
-                    real_validity, real_existence_pred, fake_validity, fake_existence_pred = self.forward(real_data,
-                                                                                                          real_existence)
+                    real_validity, real_existence_pred = self.discriminator(real_data, existence, user_ids, movie_ids)
+
+                    noise = torch.randn(real_data.size(0), self.generator.input_size).to(self.device)
+                    fake_ratings, fake_existence = self.generator(noise)
+                    fake_validity, fake_existence_pred = self.discriminator(fake_ratings, fake_existence, user_ids,
+                                                                            movie_ids)
 
                     real_validity_loss = self.criterion(real_validity, torch.ones_like(real_validity))
-                    real_existence_loss = self.criterion(real_existence_pred,
-                                                         real_existence.view(real_existence.size(0), -1))
+                    real_existence_loss = self.criterion(real_existence_pred, existence)
                     fake_validity_loss = self.criterion(fake_validity, torch.zeros_like(fake_validity))
-                    fake_existence_loss = self.criterion(fake_existence_pred, torch.zeros_like(fake_existence_pred))
+                    fake_existence_loss = self.criterion(fake_existence_pred, fake_existence)
 
                     d_loss = real_validity_loss + real_existence_loss + fake_validity_loss + fake_existence_loss
                     d_loss.backward()
@@ -62,10 +73,13 @@ class GAN(nn.Module):
 
                     # Generator Training
                     self.optimizer_g.zero_grad()
-                    _, _, fake_validity, fake_existence_pred = self.forward(real_data, real_existence)
+                    noise = torch.randn(real_data.size(0), self.generator.input_size).to(self.device)
+                    fake_ratings, fake_existence = self.generator(noise)
+                    fake_validity, fake_existence_pred = self.discriminator(fake_ratings, fake_existence, user_ids,
+                                                                            movie_ids)
 
                     g_validity_loss = self.criterion(fake_validity, torch.ones_like(fake_validity))
-                    g_existence_loss = self.criterion(fake_existence_pred, torch.ones_like(fake_existence_pred))
+                    g_existence_loss = self.criterion(fake_existence_pred, fake_existence)
 
                     g_loss = g_validity_loss + g_existence_loss
                     g_loss.backward()
