@@ -1,4 +1,5 @@
 import torch
+import psutil
 import os
 import logging
 from Dataset import MovieLensDataLoader
@@ -9,16 +10,22 @@ import torch.optim as optim
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
+# Function to print memory usage
+def print_memory_usage(step):
+    process = psutil.Process(os.getpid())
+    print(f"{step} - Memory usage: {process.memory_info().rss / (1024 * 1024)} MB")
+
 # Create a "Results" folder if it doesn't exist
 os.makedirs("Results", exist_ok=True)
 
 # Set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 # Dataset parameters
 ratings_file = "datasets/ratings_100k_preprocessed.csv"
-batch_size = 32
-chunk_size = 100
+batch_size = 8
+chunk_size = 10
 
 # Model parameters
 input_size = 100
@@ -47,17 +54,19 @@ logger.addHandler(file_handler)
 data_loader = MovieLensDataLoader(ratings_file, batch_size, chunk_size)
 
 # Initialize models
+# Print memory usage before and after initializing Generator
+print_memory_usage("Before Generator")
 generator = Generator(input_size=input_size, fc1_size=fc1_size, main_sizes=main_sizes,
-                      dropout_rate=dropout_rate, existence_gen_size=existence_gen_size).to(device)
-discriminator = Discriminator(
-    ratings_size=existence_gen_size,
-    existence_size=existence_gen_size,
-    user_id_size=1,  # Assuming each user ID is a single value
-    movie_id_size=1,  # Assuming each movie ID is a single value
-    fc1_size=fc1_size,
-    main_sizes=main_sizes,
-    dropout_rate=dropout_rate
-).to(device)
+                      dropout_rate=dropout_rate, num_users=data_loader.dataset.num_users,
+                      num_movies=data_loader.dataset.num_movies).to(device)
+print_memory_usage("After Generator")
+
+# Print memory usage before and after initializing Discriminator
+print_memory_usage("Before Discriminator")
+discriminator = Discriminator(num_users=data_loader.dataset.num_users,
+                              num_movies=data_loader.dataset.num_movies, fc1_size=fc1_size,
+                              dropout_rate=dropout_rate).to(device)
+print_memory_usage("After Discriminator")
 
 # Loss function
 criterion = nn.BCEWithLogitsLoss()
