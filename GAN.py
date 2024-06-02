@@ -4,23 +4,14 @@ import torch.optim as optim
 
 
 class GAN(nn.Module):
-    def __init__(self, generator, discriminator, device, criterion=nn.BCEWithLogitsLoss(),
-                 optimizer_g=None, optimizer_d=None):
+    def __init__(self, generator, discriminator, device, criterion, optimizer_g, optimizer_d):
         super(GAN, self).__init__()
         self.generator = generator
         self.discriminator = discriminator
         self.device = device
         self.criterion = criterion
-
-        if optimizer_g is None:
-            self.optimizer_g = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-        else:
-            self.optimizer_g = optimizer_g
-
-        if optimizer_d is None:
-            self.optimizer_d = optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-        else:
-            self.optimizer_d = optimizer_d
+        self.optimizer_g = optimizer_g
+        self.optimizer_d = optimizer_d
 
     def forward(self, real_data, real_existence):
         batch_size = real_data.size(0)
