@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
+import logging
 import torch.optim as optim
 
 
 class GAN(nn.Module):
-    def __init__(self, generator, discriminator, device, criterion, optimizer_g, optimizer_d):
+    def __init__(self, generator, discriminator, device, criterion, optimizer_g, optimizer_d, logger):
         super(GAN, self).__init__()
         self.generator = generator
         self.discriminator = discriminator
@@ -12,6 +13,7 @@ class GAN(nn.Module):
         self.criterion = criterion
         self.optimizer_g = optimizer_g
         self.optimizer_d = optimizer_d
+        self.logger = logger
 
     def forward(self, real_data, real_existence):
         batch_size = real_data.size(0)
@@ -29,13 +31,12 @@ class GAN(nn.Module):
 
         return real_validity, real_existence_pred, fake_validity, fake_existence_pred
 
-    def train_epoch(self, data_loader, chunk_size, num_chunks, num_epochs, verbose=False):
+    def train_epoch(self, data_loader, chunk_size, num_chunks, num_epochs):
         epoch_d_losses = []
         epoch_g_losses = []
 
         for epoch in range(num_epochs):
-            if verbose:
-                print(f"Epoch {epoch + 1}/{num_epochs} started")
+            self.logger.info(f"Epoch {epoch + 1}/{num_epochs} started")
 
             for chunk_idx, chunk_loader in enumerate(data_loader):
                 if chunk_idx >= num_chunks:
@@ -73,12 +74,10 @@ class GAN(nn.Module):
                     epoch_d_losses.append(d_loss.item())
                     epoch_g_losses.append(g_loss.item())
 
-                    if verbose:
-                        print(
-                            f"Chunk {chunk_idx + 1}/{num_chunks}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+                self.logger.info(
+                    f"Chunk {chunk_idx + 1}/{num_chunks}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
-            if verbose:
-                print(
-                    f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
+            self.logger.info(
+                f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
 
         return epoch_d_losses, epoch_g_losses
