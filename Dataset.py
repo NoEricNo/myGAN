@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import csr_matrix
-
+import torch
 
 def divide_users(num_users, num_groups):
     chunk_size = (num_users + num_groups - 1) // num_groups
@@ -11,7 +11,6 @@ def divide_users(num_users, num_groups):
         end = min(start + chunk_size, num_users)
         user_chunks.append((start, end))
     return user_chunks
-
 
 def create_overlapping_chunks(num_items, num_groups, overlap_ratio):
     chunk_size = (num_items + num_groups - 1) // num_groups
@@ -22,7 +21,6 @@ def create_overlapping_chunks(num_items, num_groups, overlap_ratio):
         end = min(start + chunk_size, num_items)
         chunks.append((start, end))
     return chunks
-
 
 class MovieLensDataset(Dataset):
     def __init__(self, ratings_file, num_user_groups, num_movie_groups, movie_overlap_ratio):
@@ -73,17 +71,28 @@ class MovieLensDataset(Dataset):
         movie_indices = [movie_id_mapping[movie_id] for movie_id in original_movie_ids]
 
         rating_matrix = csr_matrix((rating_values, (user_indices, movie_indices)),
-                                   shape=(num_users, num_movies)).toarray()
+                                   shape=(num_users, num_movies))
         existence_matrix = (rating_matrix > 0).astype(np.float32)
-
-        rating_matrix[rating_matrix == 0] = -9999  # Replace missing ratings with -9999
-        existence_matrix = (rating_matrix != -9999).astype(np.float32)  # Create existence matrix
 
         user_id_matrix = np.array(user_indices).reshape(-1, 1).astype(np.float32)
         movie_id_matrix = np.array(movie_indices).reshape(-1, 1).astype(np.float32)
 
         return rating_matrix, existence_matrix, user_id_matrix, movie_id_matrix
 
+def sparse_collate(batch):
+    data_list, existence_list, user_list, movie_list = zip(*batch)
+
+    data_tensors = [torch.tensor(data.toarray(), dtype=torch.float32).to_sparse() for data in data_list]
+    existence_tensors = [torch.tensor(existence.toarray(), dtype=torch.float32).to_sparse() for existence in existence_list]
+    user_tensors = [torch.tensor(users, dtype=torch.float32) for users in user_list]
+    movie_tensors = [torch.tensor(movies, dtype=torch.float32) for movies in movie_list]
+
+    return (
+        torch.stack(data_tensors),
+        torch.stack(existence_tensors),
+        torch.stack(user_tensors),
+        torch.stack(movie_tensors)
+    )
 
 class MovieLensDataLoader:
     def __init__(self, ratings_file, batch_size, num_user_groups, num_movie_groups, movie_overlap_ratio):
@@ -96,8 +105,12 @@ class MovieLensDataLoader:
             print(
                 f"Chunk {block_idx} sizes - Data: {data_chunk.shape}, Existence: {existence_chunk.shape}, Users: {user_id_chunk.shape}, Movies: {movie_id_chunk.shape}")
             if data_chunk.size > 0:  # Ensure non-empty chunks
-                chunk_loader = DataLoader(list(zip(data_chunk, existence_chunk, user_id_chunk, movie_id_chunk)),
-                                          batch_size=self.batch_size, shuffle=True)
+                chunk_loader = DataLoader(
+                    list(zip(data_chunk, existence_chunk, user_id_chunk, movie_id_chunk)),
+                    batch_size=self.batch_size,
+                    shuffle=True,
+                    collate_fn=sparse_collate
+                )
                 yield chunk_loader
 
     def __len__(self):

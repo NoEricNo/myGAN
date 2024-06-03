@@ -73,7 +73,7 @@ generator = Generator(input_size=input_size, fc1_size=fc1_size, main_sizes=main_
 print_memory_usage("After Generator")
 
 print_memory_usage("Before Discriminator")
-discriminator = Discriminator(fc1_size=fc1_size, dropout_rate=dropout_rate).to(device)
+discriminator = Discriminator(dropout_rate=dropout_rate).to(device)
 print_memory_usage("After Discriminator")
 
 # Print model parameters for verification

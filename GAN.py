@@ -18,10 +18,10 @@ class GAN(nn.Module):
 
         fake_ratings, fake_existence = self.generator(noise)
 
-        real_data_flat = real_data.view(batch_size, -1)
-        real_existence_flat = real_existence.view(batch_size, -1)
-        fake_ratings_flat = fake_ratings.view(batch_size, -1)
-        fake_existence_flat = fake_existence.view(batch_size, -1)
+        real_data_flat = real_data.to_dense().view(batch_size, -1)
+        real_existence_flat = real_existence.to_dense().view(batch_size, -1)
+        fake_ratings_flat = fake_ratings.to_dense().view(batch_size, -1)
+        fake_existence_flat = fake_existence.to_dense().view(batch_size, -1)
 
         real_validity, real_existence_pred = self.discriminator(real_data_flat, real_existence_flat)
         fake_validity, fake_existence_pred = self.discriminator(fake_ratings_flat, fake_existence_flat)
@@ -40,26 +40,26 @@ class GAN(nn.Module):
                     break
 
                 for real_ratings, real_existence, user_ids, movie_ids in chunk_loader:
-                    real_ratings = real_ratings.float().to(self.device)
-                    real_existence = real_existence.float().to(self.device)
+                    real_ratings = real_ratings.to_dense().float().to(self.device)
+                    real_existence = real_existence.to_dense().float().to(self.device)
                     user_ids = user_ids.float().to(self.device).view(-1, 1)
                     movie_ids = movie_ids.float().to(self.device).view(-1, 1)
 
-                    # Discriminator Training
                     self.optimizer_d.zero_grad()
                     real_validity = self.discriminator(real_ratings, real_existence, user_ids, movie_ids)
 
                     noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
                     fake_ratings, fake_existence = self.generator(noise)
 
-                    # Chunk the fake ratings and existence to match the real data chunk size
+                    # Convert fake ratings and existence to dense format
+                    fake_ratings = fake_ratings.to_dense()
+                    fake_existence = fake_existence.to_dense()
+
+                    # Match dimensions with real ratings and existence
                     fake_ratings = fake_ratings[:, :real_ratings.size(1)]
                     fake_existence = fake_existence[:, :real_existence.size(1)]
 
-                    # Apply mask to fake ratings using generated existence
                     fake_ratings = fake_ratings * fake_existence
-
-                    # Clamp and round fake ratings to nearest 0.5
                     fake_ratings = torch.clamp(fake_ratings, 0.5, 5.0)
                     fake_ratings = torch.round(fake_ratings * 2) / 2
 
@@ -72,19 +72,19 @@ class GAN(nn.Module):
                     d_loss.backward()
                     self.optimizer_d.step()
 
-                    # Generator Training
                     self.optimizer_g.zero_grad()
                     noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
                     fake_ratings, fake_existence = self.generator(noise)
 
-                    # Chunk the fake ratings and existence to match the real data chunk size
+                    # Convert fake ratings and existence to dense format
+                    fake_ratings = fake_ratings.to_dense()
+                    fake_existence = fake_existence.to_dense()
+
+                    # Match dimensions with real ratings and existence
                     fake_ratings = fake_ratings[:, :real_ratings.size(1)]
                     fake_existence = fake_existence[:, :real_existence.size(1)]
 
-                    # Apply mask to fake ratings using generated existence
                     fake_ratings = fake_ratings * fake_existence
-
-                    # Clamp and round fake ratings to nearest 0.5
                     fake_ratings = torch.clamp(fake_ratings, 0.5, 5.0)
                     fake_ratings = torch.round(fake_ratings * 2) / 2
 
