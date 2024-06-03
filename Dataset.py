@@ -1,36 +1,70 @@
-import torch
+import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-import pandas as pd
-from scipy.sparse import coo_matrix
 from scipy.sparse import csr_matrix
 
-import torch
-import numpy as np
-from torch.utils.data import Dataset, DataLoader
-import pandas as pd
-from scipy.sparse import csr_matrix
+
+def divide_users(num_users, num_groups):
+    chunk_size = (num_users + num_groups - 1) // num_groups
+    user_chunks = []
+    for start in range(0, num_users, chunk_size):
+        end = min(start + chunk_size, num_users)
+        user_chunks.append((start, end))
+    return user_chunks
+
+
+def create_overlapping_chunks(num_items, num_groups, overlap_ratio):
+    chunk_size = (num_items + num_groups - 1) // num_groups
+    overlap_size = int(chunk_size * overlap_ratio)
+    step_size = chunk_size - overlap_size
+    chunks = []
+    for start in range(0, num_items, step_size):
+        end = min(start + chunk_size, num_items)
+        chunks.append((start, end))
+    return chunks
+
 
 class MovieLensDataset(Dataset):
-    def __init__(self, ratings_file, chunk_size):
-        self.rating_matrix, self.existence_matrix, self.num_movies, self.user_id_matrix, self.movie_id_matrix, self.num_users = self.load_data(ratings_file)
-        self.chunk_size = chunk_size
-        self.num_chunks = (self.rating_matrix.shape[0] + chunk_size - 1) // chunk_size
+    def __init__(self, ratings_file, num_user_groups, num_movie_groups, movie_overlap_ratio):
+        self.ratings_file = ratings_file
+        self.num_user_groups = num_user_groups
+        self.num_movie_groups = num_movie_groups
+        self.movie_overlap_ratio = movie_overlap_ratio
 
-    def load_data(self, ratings_file):
-        print(f"Loading data from {ratings_file}")
-        ratings = pd.read_csv(ratings_file)
-        print(f"Initial ratings data shape: {ratings.shape}")
+        # Load data to get the number of users and movies
+        df = pd.read_csv(self.ratings_file)
+        self.num_users = df['userId'].nunique()
+        self.num_movies = df['movieId'].nunique()
 
-        user_indices = ratings['userId'].values
-        original_movie_ids = ratings['movieId'].values
-        rating_values = ratings['rating'].values
+        self.user_chunks = self._create_user_chunks()
+        self.movie_chunks = self._create_movie_chunks()
 
-        num_users = ratings['userId'].nunique()
+    def _create_user_chunks(self):
+        return divide_users(self.num_users, self.num_user_groups)
+
+    def _create_movie_chunks(self):
+        return create_overlapping_chunks(self.num_movies, self.num_movie_groups, self.movie_overlap_ratio)
+
+    def __len__(self):
+        return len(self.user_chunks) * len(self.movie_chunks)
+
+    def __getitem__(self, idx):
+        user_chunk_idx = idx // len(self.movie_chunks)
+        movie_chunk_idx = idx % len(self.movie_chunks)
+
+        user_start, user_end = self.user_chunks[user_chunk_idx]
+        movie_start, movie_end = self.movie_chunks[movie_chunk_idx]
+
+        df = pd.read_csv(self.ratings_file)
+        df = df[(df['userId'] >= user_start) & (df['userId'] < user_end) &
+                (df['movieId'] >= movie_start) & (df['movieId'] < movie_end)]
+
+        user_indices = df['userId'].values
+        original_movie_ids = df['movieId'].values
+        rating_values = df['rating'].values
+
+        num_users = len(np.unique(user_indices))
         num_movies = len(np.unique(original_movie_ids))
-
-        print(f"Number of users: {num_users}")
-        print(f"Number of movies: {num_movies}")
 
         user_id_mapping = {user_id: idx for idx, user_id in enumerate(np.unique(user_indices))}
         user_indices = [user_id_mapping[user_id] for user_id in user_indices]
@@ -38,11 +72,9 @@ class MovieLensDataset(Dataset):
         movie_id_mapping = {movie_id: idx for idx, movie_id in enumerate(np.unique(original_movie_ids))}
         movie_indices = [movie_id_mapping[movie_id] for movie_id in original_movie_ids]
 
-        rating_matrix = csr_matrix((rating_values, (user_indices, movie_indices)), shape=(num_users, num_movies)).toarray()
+        rating_matrix = csr_matrix((rating_values, (user_indices, movie_indices)),
+                                   shape=(num_users, num_movies)).toarray()
         existence_matrix = (rating_matrix > 0).astype(np.float32)
-
-        print(f"rating_matrix shape: {rating_matrix.shape}")
-        print(f"existence_matrix shape: {existence_matrix.shape}")
 
         rating_matrix[rating_matrix == 0] = -9999  # Replace missing ratings with -9999
         existence_matrix = (rating_matrix != -9999).astype(np.float32)  # Create existence matrix
@@ -50,32 +82,23 @@ class MovieLensDataset(Dataset):
         user_id_matrix = np.array(user_indices).reshape(-1, 1).astype(np.float32)
         movie_id_matrix = np.array(movie_indices).reshape(-1, 1).astype(np.float32)
 
-        return rating_matrix, existence_matrix, num_movies, user_id_matrix, movie_id_matrix, num_users
-
-    def __len__(self):
-        return self.num_chunks
-
-    def __getitem__(self, idx):
-        start_idx = idx * self.chunk_size
-        end_idx = min(start_idx + self.chunk_size, self.rating_matrix.shape[0])
-        data_chunk = self.rating_matrix[start_idx:end_idx]
-        existence_chunk = self.existence_matrix[start_idx:end_idx]
-        user_id_chunk = self.user_id_matrix[start_idx:end_idx]
-        movie_id_chunk = self.movie_id_matrix[start_idx:end_idx]
-        return data_chunk, existence_chunk, user_id_chunk, movie_id_chunk
+        return rating_matrix, existence_matrix, user_id_matrix, movie_id_matrix
 
 
 class MovieLensDataLoader:
-    def __init__(self, ratings_file, batch_size, chunk_size):
-        self.dataset = MovieLensDataset(ratings_file, chunk_size)
+    def __init__(self, ratings_file, batch_size, num_user_groups, num_movie_groups, movie_overlap_ratio):
+        self.dataset = MovieLensDataset(ratings_file, num_user_groups, num_movie_groups, movie_overlap_ratio)
         self.batch_size = batch_size
 
     def __iter__(self):
-        for chunk_idx in range(len(self.dataset)):
-            data_chunk, existence_chunk, user_id_chunk, movie_id_chunk = self.dataset[chunk_idx]
-            chunk_loader = DataLoader(list(zip(data_chunk, existence_chunk, user_id_chunk, movie_id_chunk)),
-                                      batch_size=self.batch_size, shuffle=True)
-            yield chunk_loader
+        for block_idx in range(len(self.dataset)):
+            data_chunk, existence_chunk, user_id_chunk, movie_id_chunk = self.dataset[block_idx]
+            print(
+                f"Chunk {block_idx} sizes - Data: {data_chunk.shape}, Existence: {existence_chunk.shape}, Users: {user_id_chunk.shape}, Movies: {movie_id_chunk.shape}")
+            if data_chunk.size > 0:  # Ensure non-empty chunks
+                chunk_loader = DataLoader(list(zip(data_chunk, existence_chunk, user_id_chunk, movie_id_chunk)),
+                                          batch_size=self.batch_size, shuffle=True)
+                yield chunk_loader
 
     def __len__(self):
         return len(self.dataset)

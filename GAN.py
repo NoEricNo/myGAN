@@ -1,8 +1,5 @@
 import torch
 import torch.nn as nn
-import logging
-import torch.optim as optim
-
 
 class GAN(nn.Module):
     def __init__(self, generator, discriminator, device, criterion, optimizer_g, optimizer_d, logger):
@@ -31,8 +28,7 @@ class GAN(nn.Module):
 
         return real_validity, real_existence_pred, fake_validity, fake_existence_pred
 
-    # In GAN.py
-    def train_epoch(self, data_loader, chunk_size, num_chunks, num_epochs):
+    def train_epoch(self, data_loader, num_chunks, num_epochs):
         epoch_d_losses = []
         epoch_g_losses = []
 
@@ -49,20 +45,23 @@ class GAN(nn.Module):
                     user_ids = user_ids.float().to(self.device).view(-1, 1)
                     movie_ids = movie_ids.float().to(self.device).view(-1, 1)
 
-                    # Debug real data shapes
-                    print(f"real_ratings shape: {real_ratings.shape}")
-                    print(f"real_existence shape: {real_existence.shape}")
-                    print(f"user_ids shape: {user_ids.shape}")
-                    print(f"movie_ids shape: {movie_ids.shape}")
-
                     # Discriminator Training
                     self.optimizer_d.zero_grad()
                     real_validity = self.discriminator(real_ratings, real_existence, user_ids, movie_ids)
 
                     noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
                     fake_ratings, fake_existence = self.generator(noise)
-                    print(f"fake_ratings shape: {fake_ratings.shape}")
-                    print(f"fake_existence shape: {fake_existence.shape}")
+
+                    # Chunk the fake ratings and existence to match the real data chunk size
+                    fake_ratings = fake_ratings[:, :real_ratings.size(1)]
+                    fake_existence = fake_existence[:, :real_existence.size(1)]
+
+                    # Apply mask to fake ratings using generated existence
+                    fake_ratings = fake_ratings * fake_existence
+
+                    # Clamp and round fake ratings to nearest 0.5
+                    fake_ratings = torch.clamp(fake_ratings, 0.5, 5.0)
+                    fake_ratings = torch.round(fake_ratings * 2) / 2
 
                     fake_validity = self.discriminator(fake_ratings, fake_existence, user_ids, movie_ids)
 
@@ -77,8 +76,17 @@ class GAN(nn.Module):
                     self.optimizer_g.zero_grad()
                     noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
                     fake_ratings, fake_existence = self.generator(noise)
-                    print(
-                        f"After generator: fake_ratings shape: {fake_ratings.shape}, fake_existence shape: {fake_existence.shape}")
+
+                    # Chunk the fake ratings and existence to match the real data chunk size
+                    fake_ratings = fake_ratings[:, :real_ratings.size(1)]
+                    fake_existence = fake_existence[:, :real_existence.size(1)]
+
+                    # Apply mask to fake ratings using generated existence
+                    fake_ratings = fake_ratings * fake_existence
+
+                    # Clamp and round fake ratings to nearest 0.5
+                    fake_ratings = torch.clamp(fake_ratings, 0.5, 5.0)
+                    fake_ratings = torch.round(fake_ratings * 2) / 2
 
                     fake_validity = self.discriminator(fake_ratings, fake_existence, user_ids, movie_ids)
 
@@ -90,18 +98,8 @@ class GAN(nn.Module):
                     epoch_d_losses.append(d_loss.item())
                     epoch_g_losses.append(g_loss.item())
 
-                self.logger.info(
-                    f"Chunk {chunk_idx + 1}/{num_chunks}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+                self.logger.info(f"Chunk {chunk_idx + 1}/{num_chunks}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
-            self.logger.info(
-                f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
+            self.logger.info(f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
 
         return epoch_d_losses, epoch_g_losses
-
-
-
-
-
-
-
-

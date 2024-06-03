@@ -19,20 +19,20 @@ def print_memory_usage(step):
 os.makedirs("Results", exist_ok=True)
 
 # Set device
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Dataset parameters
 ratings_file = "datasets/ratings_100k_preprocessed.csv"
-batch_size = 8
-chunk_size = 10
+batch_size = 128
+num_user_groups = 1
+num_movie_groups = 1
+movie_overlap_ratio = 0
 
 # Model parameters
 input_size = 100
 fc1_size = 512
 main_sizes = [256, 128]
 dropout_rate = 0.3
-existence_gen_size = 9724
 
 # Training parameters
 num_epochs = 50
@@ -51,22 +51,24 @@ file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(mes
 logger.addHandler(file_handler)
 
 # Load data
-data_loader = MovieLensDataLoader(ratings_file, batch_size, chunk_size)
+data_loader = MovieLensDataLoader(ratings_file, batch_size, num_user_groups, num_movie_groups, movie_overlap_ratio)
 
 # Initialize models
-# Print memory usage before and after initializing Generator
 print_memory_usage("Before Generator")
 generator = Generator(input_size=input_size, fc1_size=fc1_size, main_sizes=main_sizes,
                       dropout_rate=dropout_rate, num_users=data_loader.dataset.num_users,
                       num_movies=data_loader.dataset.num_movies).to(device)
 print_memory_usage("After Generator")
 
-# Print memory usage before and after initializing Discriminator
 print_memory_usage("Before Discriminator")
-discriminator = Discriminator(num_users=data_loader.dataset.num_users,
-                              num_movies=data_loader.dataset.num_movies, fc1_size=fc1_size,
-                              dropout_rate=dropout_rate).to(device)
+discriminator = Discriminator(fc1_size=fc1_size, dropout_rate=dropout_rate).to(device)
 print_memory_usage("After Discriminator")
+
+# Print model parameters for verification
+print(f"Generator num_users: {data_loader.dataset.num_users}")
+print(f"Generator num_movies: {data_loader.dataset.num_movies}")
+print(f"Discriminator num_users: {data_loader.dataset.num_users}")
+print(f"Discriminator num_movies: {data_loader.dataset.num_movies}")
 
 # Loss function
 criterion = nn.BCEWithLogitsLoss()
@@ -79,7 +81,7 @@ optimizer_d = optim.Adam(discriminator.parameters(), lr=lr_d, betas=betas)
 gan = GAN(generator, discriminator, device, criterion, optimizer_g, optimizer_d, logger)
 
 # Train the model
-epoch_d_losses, epoch_g_losses = gan.train_epoch(data_loader, chunk_size, num_chunks=1, num_epochs=num_epochs)
+epoch_d_losses, epoch_g_losses = gan.train_epoch(data_loader, num_chunks=len(data_loader), num_epochs=num_epochs)
 
 # Plot the losses
 plt.figure(figsize=(10, 5))
