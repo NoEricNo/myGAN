@@ -2,6 +2,7 @@ import torch
 import psutil
 import os
 import logging
+from datetime import datetime
 from Dataset import MovieLensDataLoader
 from Generator import Generator
 from Discriminator import Discriminator
@@ -9,6 +10,27 @@ from GAN import GAN
 import torch.optim as optim
 import torch.nn as nn
 import matplotlib.pyplot as plt
+
+def setup_logging():
+    log_dir = "Results"
+    os.makedirs(log_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = os.path.join(log_dir, f"training_log_{timestamp}.txt")
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s',
+                        handlers=[
+                            logging.FileHandler(log_filename),
+                            logging.StreamHandler()
+                        ])
+
+# Set up logging
+setup_logging()
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Example logging
+logger.info("This is a log message for a new run.")
 
 # Function to print memory usage
 def print_memory_usage(step):
@@ -23,7 +45,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Dataset parameters
 ratings_file = "datasets/ratings_100k_preprocessed.csv"
-batch_size = 128
+batch_size = 256
 num_user_groups = 1
 num_movie_groups = 1
 movie_overlap_ratio = 0
@@ -39,16 +61,6 @@ num_epochs = 50
 lr_g = 0.0002
 lr_d = 0.0002
 betas = (0.5, 0.999)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Create a file handler for logging
-file_handler = logging.FileHandler("Results/training_log.txt")
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(file_handler)
 
 # Load data
 data_loader = MovieLensDataLoader(ratings_file, batch_size, num_user_groups, num_movie_groups, movie_overlap_ratio)

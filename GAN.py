@@ -98,7 +98,7 @@ class GAN(nn.Module):
                     epoch_d_losses.append(d_loss.item())
                     epoch_g_losses.append(g_loss.item())
 
-                self.logger.info(f"Chunk {chunk_idx + 1}/{num_chunks}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
+                self.logger.info(f"Chunk {chunk_idx + 1}/{num_chunks} (Epoch {epoch + 1}), D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
             self.logger.info(f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
 
