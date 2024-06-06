@@ -14,16 +14,16 @@ class Generator(nn.Module):
         for size in main_sizes:
             self.main_layers.append(nn.Linear(previous_size, size))
             previous_size = size
-        self.fc_ratings = nn.Linear(previous_size, num_movies)
+        self.fc_rating_values = nn.Linear(previous_size, num_movies)
         self.fc_existence = nn.Linear(previous_size, num_movies)
 
-    def forward(self, x, movie_ids):
+    def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = self.dropout(x)
         for layer in self.main_layers:
             x = torch.relu(layer(x))
 
-        rating_values = self.fc_ratings(x).view(-1, movie_ids.size(1))
-        rating_existence = self.fc_existence(x).view(-1, movie_ids.size(1))
+        rating_values = self.fc_rating_values(x)
+        existence_flags = self.fc_existence(x)
 
-        return rating_values.to_sparse(), rating_existence.to_sparse()
+        return rating_values.to_sparse(), existence_flags.to_sparse()

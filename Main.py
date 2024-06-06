@@ -2,7 +2,8 @@ import torch
 import logging
 import os
 from datetime import datetime
-from Dataset import MovieLensDataLoader
+from torch.utils.data import DataLoader
+from Dataset import MovieLensDataset, sparse_collate
 from Generator import Generator
 from Discriminator import Discriminator
 from GAN import GAN
@@ -43,9 +44,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Dataset parameters
 ratings_file = "datasets/ratings_100k_preprocessed.csv"
 batch_size = 256
-num_user_groups = 1
-num_movie_groups = 1
-movie_overlap_ratio = 0
 
 # Model parameters
 input_size = 100
@@ -61,30 +59,24 @@ lr_d = 0.0002
 betas = (0.5, 0.999)
 
 # Load data
-data_loader = MovieLensDataLoader(ratings_file, batch_size, num_user_groups, num_movie_groups, movie_overlap_ratio)
+dataset = MovieLensDataset(ratings_file)
+data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=sparse_collate)
 
 # Convert the entire dataset to a dense matrix for SVD
-all_ratings = []
-for i in range(len(data_loader.dataset)):
-    ratings, _, _, _ = data_loader.dataset[i]
-    all_ratings.append(torch.tensor(ratings.todense(), dtype=torch.float32))
-
-all_ratings = torch.cat(all_ratings)
+all_ratings = torch.tensor(dataset.rating_matrix.toarray(), dtype=torch.float32)
 item_factors = perform_svd(all_ratings.numpy(), latent_dim)
 
 # Initialize models
 generator = Generator(input_size=input_size, fc1_size=fc1_size, main_sizes=main_sizes, dropout_rate=dropout_rate,
-                      num_users=data_loader.dataset.num_users,
-                      num_movies=data_loader.dataset.num_movies).to(device)
+                      num_users=dataset.num_users, num_movies=dataset.num_movies).to(device)
 
 discriminator = Discriminator(dropout_rate=dropout_rate).to(device)
 
 # Print model parameters for verification
-print(f"Generator num_users: {data_loader.dataset.num_users}")
-print(f"Generator num_movies: {data_loader.dataset.num_movies}")
-print(f"Discriminator num_users: {data_loader.dataset.num_users}")
-print(f"Discriminator num_movies: {data_loader.dataset.num_movies}")
-
+print(f"Generator num_users: {dataset.num_users}")
+print(f"Generator num_movies: {dataset.num_movies}")
+print(f"Discriminator num_users: {dataset.num_users}")
+print(f"Discriminator num_movies: {dataset.num_movies}")
 
 # Optimizers
 optimizer_g = optim.Adam(generator.parameters(), lr=lr_g, betas=betas)
@@ -94,7 +86,7 @@ optimizer_d = optim.Adam(discriminator.parameters(), lr=lr_d, betas=betas)
 gan = GAN(generator, discriminator, device, optimizer_g, optimizer_d, logger)
 
 # Train the model
-epoch_d_losses, epoch_g_losses = gan.train_epoch(data_loader, num_chunks=len(data_loader), num_epochs=num_epochs, item_factors=torch.tensor(item_factors, dtype=torch.float32).to(device))
+epoch_d_losses, epoch_g_losses = gan.train_epoch(data_loader, num_epochs=num_epochs, item_factors=torch.tensor(item_factors, dtype=torch.float32).to(device))
 
 # Plot the losses
 plt.figure(figsize=(10, 5))
