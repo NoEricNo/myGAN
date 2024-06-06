@@ -21,7 +21,7 @@ class Discriminator(nn.Module):
 
         rating_values = rating_values.to_dense().view(batch_size, -1).float().to(self.device)
         rating_existence = rating_existence.to_dense().view(batch_size, -1).float().to(self.device)
-        user_ids = user_ids.view(batch_size, -1).float().to(self.device)
+        user_ids = user_ids.view(batch_size, 1).float().to(self.device)
         movie_ids = movie_ids.view(batch_size, -1).float().to(self.device)
 
         x = torch.cat((rating_values, rating_existence, user_ids, movie_ids), dim=1)
@@ -35,4 +35,5 @@ class Discriminator(nn.Module):
         x = self.dropout(x)
         x = torch.relu(self.fc3(x))
         validity = self.validity(x)
-        return validity
+
+        return validity.view(batch_size, 1)
