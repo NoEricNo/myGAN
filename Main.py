@@ -52,6 +52,11 @@ dropout_rate = 0.3
 fc1_size = 512  # Example size for the fully connected layer in the generator
 main_sizes = [1024, 512, 256]  # Example sizes for the main layers in the generator
 
+# Discriminator parameters
+disc_fc1_size = 128
+disc_fc2_size = 128
+disc_fc3_size = 64
+
 # Training parameters
 num_epochs = 50
 lr_g = 0.0002
@@ -64,13 +69,13 @@ data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_f
 
 # Convert the entire dataset to a dense matrix for SVD
 all_ratings = torch.tensor(dataset.rating_matrix.toarray(), dtype=torch.float32)
-item_factors = perform_svd(all_ratings.numpy(), latent_dim)
+print(f"Shape of all_ratings: {all_ratings.shape}, dtype: {all_ratings.dtype}")
 
 # Initialize models
 generator = Generator(input_size=input_size, fc1_size=fc1_size, main_sizes=main_sizes, dropout_rate=dropout_rate,
                       num_users=dataset.num_users, num_movies=dataset.num_movies).to(device)
 
-discriminator = Discriminator(dropout_rate=dropout_rate).to(device)
+discriminator = Discriminator(num_movies=dataset.num_movies, dropout_rate=dropout_rate, fc1_size=disc_fc1_size, fc2_size=disc_fc2_size, fc3_size=disc_fc3_size).to(device)
 
 # Print model parameters for verification
 print(f"Generator num_users: {dataset.num_users}")
@@ -86,7 +91,13 @@ optimizer_d = optim.Adam(discriminator.parameters(), lr=lr_d, betas=betas)
 gan = GAN(generator, discriminator, device, optimizer_g, optimizer_d, logger)
 
 # Train the model
-epoch_d_losses, epoch_g_losses = gan.train_epoch(data_loader, num_epochs=num_epochs, item_factors=torch.tensor(item_factors, dtype=torch.float32).to(device))
+item_factors = perform_svd(all_ratings.numpy(), latent_dim)
+print(f"Shape of item_factors (after SVD): {item_factors.shape}, dtype: {item_factors.dtype}")  # Print shape and dtype of item_factors after SVD
+item_factors = item_factors.T
+print(f"Shape of item_factors (after transpose): {item_factors.shape}, dtype: {item_factors.dtype}")  # Print shape and dtype of item_factors after transpose
+item_factors = torch.tensor(item_factors, dtype=torch.float32).to(device)
+print(f"Shape of item_factors (after conversion): {item_factors.shape}, dtype: {item_factors.dtype}")  # Print shape and dtype of item_factors after conversion
+epoch_d_losses, epoch_g_losses = gan.train_epoch(data_loader, num_epochs=num_epochs, item_factors=item_factors)
 
 # Plot the losses
 plt.figure(figsize=(10, 5))
