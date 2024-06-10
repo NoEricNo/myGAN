@@ -64,7 +64,7 @@ class GAN(nn.Module):
         epoch_g_losses = []
 
         for epoch in range(num_epochs):
-            self.logger.info(f"Epoch {epoch + 1}/{num_epochs} started")
+            #self.logger.info(f"Epoch {epoch + 1}/{num_epochs} started")
 
             for real_ratings, real_existence in data_loader:
                 real_ratings = real_ratings.to(self.device).float()

@@ -29,9 +29,9 @@ class Discriminator(nn.Module):
         x = torch.cat([rating_values, existence_flags], dim=1)  # Shape: (batch_size, 2 * num_movies)
 
         # Print shapes for debugging
-        print("rating_values shape:", rating_values.shape)
-        print("existence_flags shape:", existence_flags.shape)
-        print("x shape:", x.shape)
+        #print("rating_values shape:", rating_values.shape)
+        #print("existence_flags shape:", existence_flags.shape)
+        #print("x shape:", x.shape)
 
         x = x.float()  # Ensure x is of type Float
         x = torch.relu(self.fc1(x))

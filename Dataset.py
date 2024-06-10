@@ -61,8 +61,8 @@ def sparse_collate(batch):
     existence_tensors = torch.stack(existence_tensors)
 
     # Print shapes for debugging
-    print("data_tensors shape in sparse_collate:", data_tensors.shape)
-    print("existence_tensors shape in sparse_collate:", existence_tensors.shape)
+    #print("data_tensors shape in sparse_collate:", data_tensors.shape)
+    #print("existence_tensors shape in sparse_collate:", existence_tensors.shape)
 
     return data_tensors, existence_tensors
 
