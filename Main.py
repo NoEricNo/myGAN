@@ -1,4 +1,3 @@
-import torch
 import matplotlib.pyplot as plt
 from setting_up import SettingUp
 
@@ -21,8 +20,8 @@ class Config:
         self.disc_fc3_size = 64
 
         # Training parameters
-        self.num_epochs = 50
-        self.lr_g = 0.0002
+        self.num_epochs = 200
+        self.lr_g = 0.0004
         self.lr_d = 0.0002
         self.betas = (0.5, 0.999)
 

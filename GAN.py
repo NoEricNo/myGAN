@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class GAN(nn.Module):
-    def __init__(self, generator, discriminator, device, optimizer_g, optimizer_d, logger):
+    def __init__(self, generator, discriminator, device, optimizer_g, optimizer_d, logger, wandb):
         super(GAN, self).__init__()
         self.generator = generator
         self.discriminator = discriminator
@@ -11,6 +11,7 @@ class GAN(nn.Module):
         self.optimizer_g = optimizer_g
         self.optimizer_d = optimizer_d
         self.logger = logger
+        self.wandb = wandb
 
     def adversarial_loss(self, predictions, targets):
         predictions = predictions.view(-1, 1)
@@ -59,6 +60,9 @@ class GAN(nn.Module):
 
         return (adversarial_loss + distribution_loss + latent_loss) / 3
 
+    def clip_loss(self, loss, max_value=100.0):
+        return torch.clamp(loss, max=max_value)
+
     def train_epoch(self, data_loader, num_epochs, item_factors):
         epoch_d_losses = []
         epoch_g_losses = []
@@ -106,9 +110,28 @@ class GAN(nn.Module):
                 g_loss.backward()
                 self.optimizer_g.step()
 
+                d_loss = self.clip_loss(d_loss)
+                g_loss = self.clip_loss(g_loss)
+
                 epoch_d_losses.append(d_loss.item())
                 epoch_g_losses.append(g_loss.item())
 
+                # Log to wandb
+                self.wandb.log({
+                    "d_loss": d_loss.item(),
+                    "g_loss": g_loss.item(),
+                    "epoch": epoch
+                })
+
             self.logger.info(f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
 
+            avg_d_loss = sum(epoch_d_losses) / len(epoch_d_losses)
+            avg_g_loss = sum(epoch_g_losses) / len(epoch_g_losses)
+
+            # Log epoch averages
+            self.wandb.log({
+                "epoch_avg_d_loss": avg_d_loss,
+                "epoch_avg_g_loss": avg_g_loss,
+                "epoch": epoch
+            })
         return epoch_d_losses, epoch_g_losses

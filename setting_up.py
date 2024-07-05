@@ -9,7 +9,7 @@ from Discriminator import Discriminator
 from GAN import GAN
 import torch.optim as optim
 from sklearn.decomposition import TruncatedSVD
-
+import wandb
 
 class SettingUp:
     def __init__(self, config):
@@ -18,7 +18,9 @@ class SettingUp:
         self.logger = self.setup_logging()
         self.dataset, self.data_loader, self.all_ratings = self.load_data()
         self.item_factors = self.perform_svd(self.all_ratings.numpy(), self.config.latent_dim)
+        self.wandb = wandb.init(project="gan-recommender", config=vars(config))
         self.gan = self.initialize_models()
+
 
     def setup_logging(self):
         log_dir = "Results"
@@ -59,7 +61,7 @@ class SettingUp:
         optimizer_g = optim.Adam(generator.parameters(), lr=self.config.lr_g, betas=self.config.betas)
         optimizer_d = optim.Adam(discriminator.parameters(), lr=self.config.lr_d, betas=self.config.betas)
 
-        return GAN(generator, discriminator, self.device, optimizer_g, optimizer_d, self.logger)
+        return GAN(generator, discriminator, self.device, optimizer_g, optimizer_d, self.logger, self.wandb)
 
     def get_item_factors(self):
         item_factors = torch.tensor(self.item_factors, dtype=torch.float32).to(self.device)
