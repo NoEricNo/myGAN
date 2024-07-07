@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 from setting_up import SettingUp
+import torch
+
 
 class Config:
     def __init__(self):
@@ -11,8 +13,8 @@ class Config:
         self.input_size = 100
         self.latent_dim = 50  # Latent dimension for SVD
         self.dropout_rate = 0.3
-        self.fc1_size = 512  # Example size for the fully connected layer in the generator
-        self.main_sizes = [1024, 512, 256]  # Example sizes for the main layers in the generator
+        self.fc1_size = 2048  # Example size for the fully connected layer in the generator
+        self.main_sizes = [2048, 1024, 512,]  # Example sizes for the main layers in the generator
 
         # Discriminator parameters
         self.disc_fc1_size = 128
@@ -20,10 +22,11 @@ class Config:
         self.disc_fc3_size = 64
 
         # Training parameters
-        self.num_epochs = 200
-        self.lr_g = 0.0004
-        self.lr_d = 0.0002
+        self.num_epochs = 1200
+        self.lr_g = 0.00005  # Further lowered learning rate for the generator
+        self.lr_d = 0.000005  # Further lowered learning rate for the discriminator
         self.betas = (0.5, 0.999)
+
 
 # Load configuration
 config = Config()
@@ -42,7 +45,8 @@ item_factors = setup.get_item_factors()
 print(f"Shape of item_factors: {item_factors.shape}, dtype: {item_factors.dtype}")
 
 # Train the model
-epoch_d_losses, epoch_g_losses = setup.gan.train_epoch(setup.data_loader, num_epochs=config.num_epochs, item_factors=item_factors)
+epoch_d_losses, epoch_g_losses = setup.gan.train_epoch(setup.data_loader, num_epochs=config.num_epochs,
+                                                       item_factors=item_factors)
 
 # Plot the losses
 plt.figure(figsize=(10, 5))
@@ -53,3 +57,38 @@ plt.ylabel('Loss')
 plt.legend()
 plt.savefig("Results/loss_plot.png")
 plt.show()
+
+
+def post_process(ratings, existence):
+    # Round ratings to nearest 0.5
+    ratings = torch.round(ratings * 2) / 2.0
+    # Threshold existence to binary values
+    existence = (existence > 0.5).float()
+    # Apply existence mask
+    ratings = ratings * existence
+    return ratings, existence
+
+
+def generate_samples(generator, num_samples=5):
+    # Generate noise
+    noise = torch.randn(num_samples, generator.input_size).to(device)
+
+    # Generate fake ratings and existence flags
+    fake_ratings, fake_existence = generator(noise)
+    fake_ratings = fake_ratings.to_dense()
+    fake_existence = fake_existence.to_dense()
+
+    # Post-process the generated data
+    #fake_ratings, fake_existence = post_process(fake_ratings, fake_existence)
+
+    for i in range(num_samples):
+        print(f"Sample {i + 1}:")
+        print("Ratings:")
+        print(fake_ratings[i].detach().cpu().numpy())  # Use detach() before converting to numpy
+        print("Existence Flags:")
+        print(fake_existence[i].detach().cpu().numpy())  # Use detach() before converting to numpy
+        print("\n")
+
+
+# Generate and print some samples
+generate_samples(setup.gan.generator)

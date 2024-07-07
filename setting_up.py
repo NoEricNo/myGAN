@@ -51,7 +51,7 @@ class SettingUp:
     def initialize_models(self):
         generator = Generator(input_size=self.config.input_size, fc1_size=self.config.fc1_size,
                               main_sizes=self.config.main_sizes,
-                              dropout_rate=self.config.dropout_rate, num_users=self.dataset.num_users,
+                              dropout_rate=self.config.dropout_rate,
                               num_movies=self.dataset.num_movies).to(self.device)
 
         discriminator = Discriminator(num_movies=self.dataset.num_movies, dropout_rate=self.config.dropout_rate,

@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
 
-
 class Generator(nn.Module):
-    def __init__(self, input_size, fc1_size, main_sizes, num_users, num_movies, dropout_rate):
+    def __init__(self, input_size, fc1_size, main_sizes, num_movies, dropout_rate):
         super(Generator, self).__init__()
         self.input_size = input_size
-        self.num_users = num_users
         self.num_movies = num_movies
         self.fc1 = nn.Linear(input_size, fc1_size)
         self.dropout = nn.Dropout(dropout_rate)
@@ -15,7 +13,6 @@ class Generator(nn.Module):
         for size in main_sizes:
             self.main_layers.append(nn.Linear(previous_size, size))
             previous_size = size
-
         self.fc_rating_values = nn.Linear(previous_size, num_movies)
         self.fc_existence = nn.Linear(previous_size, num_movies)
 
@@ -25,7 +22,7 @@ class Generator(nn.Module):
         for layer in self.main_layers:
             x = torch.relu(layer(x))
 
-        rating_values = self.fc_rating_values(x)
-        existence_flags = torch.sigmoid(self.fc_existence(x))  # Apply sigmoid for binary output
+        rating_values = torch.sigmoid(self.fc_rating_values(x)) * 5  # Assuming ratings are in the range [0, 5]
+        existence_flags = torch.sigmoid(self.fc_existence(x))
 
         return rating_values.to_sparse(), existence_flags.to_sparse()
