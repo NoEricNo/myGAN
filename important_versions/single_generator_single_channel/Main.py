@@ -7,14 +7,14 @@ class Config:
     def __init__(self):
         # Dataset parameters
         self.ratings_file = "datasets/ratings_100k_preprocessed.csv"
-        self.batch_size = 512
+        self.batch_size = 256
 
         # Model parameters
-        self.input_size = 200
+        self.input_size = 100
         self.latent_dim = 50  # Latent dimension for SVD
         self.dropout_rate = 0.3
         self.fc1_size = 2048  # Example size for the fully connected layer in the generator
-        self.main_sizes = [2048, 2048, 2048, 2048, 2048]  # Example sizes for the main layers in the generator
+        self.main_sizes = [2048, 1024, 512,]  # Example sizes for the main layers in the generator
 
         # Discriminator parameters
         self.disc_fc1_size = 128
@@ -23,8 +23,8 @@ class Config:
 
         # Training parameters
         self.num_epochs = 1200
-        self.lr_g = 0.00006  # Further lowered learning rate for the generator
-        self.lr_d = 0.000008  # Further lowered learning rate for the discriminator
+        self.lr_g = 0.00005  # Further lowered learning rate for the generator
+        self.lr_d = 0.000005  # Further lowered learning rate for the discriminator
         self.betas = (0.5, 0.999)
 
 
