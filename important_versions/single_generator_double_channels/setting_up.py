@@ -6,8 +6,6 @@ from torch.utils.data import DataLoader
 from Dataset import MovieLensDataset, sparse_collate
 from Generator import Generator
 from MultiChannelGenerator import MultiChannelGenerator
-from SeparateGenerator import RatingsGenerator
-from SeparateGenerator import ExistenceGenerator
 from Discriminator import Discriminator
 from GAN import GAN
 import torch.optim as optim
@@ -57,38 +55,20 @@ class SettingUp:
                               dropout_rate=self.config.dropout_rate,
                               num_movies=self.dataset.num_movies).to(self.device)'''
 
-        '''generator = MultiChannelGenerator(input_size=self.config.input_size, fc1_size=self.config.fc1_size,
+        generator = MultiChannelGenerator(input_size=self.config.input_size, fc1_size=self.config.fc1_size,
                               main_sizes=self.config.main_sizes,
                               dropout_rate=self.config.dropout_rate,
-                              num_items=self.dataset.num_movies).to(self.device)'''
-
-        ratings_generator = RatingsGenerator(input_size=self.config.input_size,
-                                             fc1_size=self.config.fc1_size,
-                                             main_sizes=self.config.main_sizes,
-                                             dropout_rate=self.config.dropout_rate,
-                                             num_items=self.dataset.num_movies).to(self.device)
-
-
-        existence_generator = ExistenceGenerator(input_size=self.config.input_size,
-                                             fc1_size=self.config.fc1_size,
-                                             main_sizes=self.config.main_sizes,
-                                             dropout_rate=self.config.dropout_rate,
-                                             num_items=self.dataset.num_movies).to(self.device)
+                              num_items=self.dataset.num_movies).to(self.device)
 
         discriminator = Discriminator(num_movies=self.dataset.num_movies, dropout_rate=self.config.dropout_rate,
                                       fc1_size=self.config.disc_fc1_size, fc2_size=self.config.disc_fc2_size,
                                       fc3_size=self.config.disc_fc3_size).to(self.device)
 
-        optimizer_g_ratings = torch.optim.Adam(ratings_generator.parameters(), lr=self.config.lr_g,
-                                               betas=(0.5, 0.999))
-        optimizer_g_existence = torch.optim.Adam(existence_generator.parameters(), lr=self.config.lr_g,
-                                                 betas=(0.5, 0.999))
-        #optimizer_g = optim.Adam(generator.parameters(), lr=self.config.lr_g, betas=self.config.betas)
+        optimizer_g = optim.Adam(generator.parameters(), lr=self.config.lr_g, betas=self.config.betas)
         optimizer_d = optim.Adam(discriminator.parameters(), lr=self.config.lr_d, betas=self.config.betas)
 
-        #return GAN(generator, discriminator, self.device, optimizer_g, optimizer_d, self.logger, self.wandb)
-        return GAN(ratings_generator, existence_generator, discriminator, self.device,
-                   optimizer_g_ratings,optimizer_g_existence, optimizer_d, self.logger, self.wandb)
+        return GAN(generator, discriminator, self.device, optimizer_g, optimizer_d, self.logger, self.wandb)
+
     def get_item_factors(self):
         item_factors = torch.tensor(self.item_factors, dtype=torch.float32).to(self.device)
         return item_factors

@@ -7,14 +7,14 @@ class Config:
     def __init__(self):
         # Dataset parameters
         self.ratings_file = "datasets/ratings_100k_preprocessed.csv"
-        self.batch_size = 256
+        self.batch_size = 512
 
         # Model parameters
-        self.input_size = 100
+        self.input_size = 200
         self.latent_dim = 50  # Latent dimension for SVD
         self.dropout_rate = 0.3
         self.fc1_size = 2048  # Example size for the fully connected layer in the generator
-        self.main_sizes = [2048, 4096, 4096, 2048]  # Example sizes for the main layers in the generator
+        self.main_sizes = [2048, 2048, 2048, 2048, 2048]  # Example sizes for the main layers in the generator
 
         # Discriminator parameters
         self.disc_fc1_size = 128
@@ -23,8 +23,8 @@ class Config:
 
         # Training parameters
         self.num_epochs = 1200
-        self.lr_g = 0.00005  # Further lowered learning rate for the generator
-        self.lr_d = 0.000005  # Further lowered learning rate for the discriminator
+        self.lr_g = 0.00006  # Further lowered learning rate for the generator
+        self.lr_d = 0.000008  # Further lowered learning rate for the discriminator
         self.betas = (0.5, 0.999)
 
 
@@ -45,14 +45,13 @@ item_factors = setup.get_item_factors()
 print(f"Shape of item_factors: {item_factors.shape}, dtype: {item_factors.dtype}")
 
 # Train the model
-epoch_d_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(setup.data_loader, num_epochs=config.num_epochs,
+epoch_d_losses, epoch_g_losses = setup.gan.train_epoch(setup.data_loader, num_epochs=config.num_epochs,
                                                        item_factors=item_factors)
 
 # Plot the losses
 plt.figure(figsize=(10, 5))
 plt.plot(epoch_d_losses, label='Discriminator Loss')
-plt.plot(epoch_g_r_losses, label='Generator(R) Loss')
-plt.plot(epoch_g_e_losses, label='Generator(E) Loss')
+plt.plot(epoch_g_losses, label='Generator Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()

@@ -3,15 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class GAN(nn.Module):
-    def __init__(self, generator_r, generator_e, discriminator, device,
-                 optimizer_g_r, optimizer_g_e, optimizer_d, logger, wandb):
+    def __init__(self, generator, discriminator, device, optimizer_g, optimizer_d, logger, wandb):
         super(GAN, self).__init__()
-        self.generator_r = generator_r
-        self.generator_e = generator_e
+        self.generator = generator
         self.discriminator = discriminator
         self.device = device
-        self.optimizer_g_r = optimizer_g_r
-        self.optimizer_g_e = optimizer_g_e
+        self.optimizer_g = optimizer_g
         self.optimizer_d = optimizer_d
         self.logger = logger
         self.wandb = wandb
@@ -58,10 +55,18 @@ class GAN(nn.Module):
     def clip_loss(self, loss, max_value=100.0):
         return torch.clamp(loss, max=max_value)
 
+    def post_process(self, ratings, existence):
+        ratings = ratings.to_dense() if ratings.is_sparse else ratings
+        existence = existence.to_dense() if existence.is_sparse else existence
+
+        ratings = torch.round(ratings * 2) / 2.0
+        existence = (existence > 0.5).float()
+        ratings = ratings * existence
+        return ratings, existence
+
     def train_epoch(self, data_loader, num_epochs, item_factors):
         epoch_d_losses = []
-        epoch_g_r_losses = []
-        epoch_g_e_losses = []
+        epoch_g_losses = []
 
         for epoch in range(num_epochs):
             for real_ratings, real_existence in data_loader:
@@ -72,10 +77,11 @@ class GAN(nn.Module):
                 self.optimizer_d.zero_grad()
                 real_validity = self.discriminator(real_ratings, real_existence)
 
-                noise = torch.randn(real_ratings.size(0), self.generator_r.input_size).to(self.device)
-                #fake_ratings, fake_existence = self.generator(noise)
-                fake_ratings = self.generator_r(noise)
-                fake_existence = self.generator_e(noise)
+                noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
+                fake_ratings, fake_existence = self.generator(noise)
+
+                # Post-process the generated data
+                #fake_ratings, fake_existence = self.post_process(fake_ratings, fake_existence)
 
                 fake_validity = self.discriminator(fake_ratings, fake_existence)
 
@@ -87,77 +93,44 @@ class GAN(nn.Module):
                 nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=1.0)
                 self.optimizer_d.step()
 
-                ''''# Train Generator
+                # Train Generator
                 self.optimizer_g.zero_grad()
                 noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
                 fake_ratings, fake_existence = self.generator(noise)
+
+                # Post-process the generated data
+                #fake_ratings, fake_existence = self.post_process(fake_ratings, fake_existence)
 
                 fake_validity = self.discriminator(fake_ratings, fake_existence)
 
                 g_loss = self.custom_loss(fake_validity, real_ratings, fake_ratings, fake_existence, item_factors)
                 g_loss.backward()
                 nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=1.0)
-                self.optimizer_g.step()'''
-                # Train Ratings Generator
-
-                self.optimizer_g_r.zero_grad()
-                noise = torch.randn(real_ratings.size(0), self.generator_r.input_size).to(self.device)
-                fake_ratings = self.generator_r(noise)
-                fake_existence = self.generator_e(noise)
-
-                fake_validity = self.discriminator(fake_ratings, fake_existence)
-
-                g_loss_ratings = self.custom_loss(fake_validity, real_ratings, fake_ratings, fake_existence, item_factors)
-                g_loss_ratings.backward()
-                nn.utils.clip_grad_norm_(self.generator_r.parameters(), max_norm=1.0)
-                self.optimizer_g_r.step()
-
-                # Train Existence Generator
-
-                self.optimizer_g_e.zero_grad()
-                noise = torch.randn(real_ratings.size(0), self.generator_e.input_size).to(self.device)
-                fake_ratings = self.generator_r(noise)
-                fake_existence = self.generator_e(noise)
-
-                fake_validity = self.discriminator(fake_ratings, fake_existence)
-
-                g_loss_existence = self.custom_loss(fake_validity, real_ratings, fake_ratings, fake_existence, item_factors)
-                g_loss_existence.backward()
-
-                nn.utils.clip_grad_norm_(self.generator_e.parameters(), max_norm=1.0)
-                self.optimizer_g_e.step()
+                self.optimizer_g.step()
 
                 d_loss = self.clip_loss(d_loss)
-                g_loss_ratings = self.clip_loss(g_loss_ratings)
-                g_loss_existence = self.clip_loss(g_loss_existence)
-
+                g_loss = self.clip_loss(g_loss)
 
                 epoch_d_losses.append(d_loss.item())
-                epoch_g_r_losses.append(g_loss_ratings.item())
-                epoch_g_e_losses.append(g_loss_existence.item())
+                epoch_g_losses.append(g_loss.item())
 
                 # Log to wandb
                 self.wandb.log({
                     "d_loss": d_loss.item(),
-                    "g_r_loss": g_loss_ratings.item(),
-                    "g_e_loss": g_loss_existence.item(),
+                    "g_loss": g_loss.item(),
                     "epoch": epoch
                 })
 
             self.logger.info(
-                f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, "
-                f"G Loss: {sum(epoch_g_r_losses) / len(epoch_g_r_losses):.4f}, "
-                f"G Loss: {sum(epoch_g_e_losses) / len(epoch_g_e_losses):.4f}" )
+                f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, G Loss: {sum(epoch_g_losses) / len(epoch_g_losses):.4f}")
 
             avg_d_loss = sum(epoch_d_losses) / len(epoch_d_losses)
-            avg_g_r_loss = sum(epoch_g_r_losses) / len(epoch_g_r_losses)
-            avg_g_e_loss = sum(epoch_g_e_losses) / len(epoch_g_e_losses)
+            avg_g_loss = sum(epoch_g_losses) / len(epoch_g_losses)
 
             # Log epoch averages
             self.wandb.log({
                 "epoch_avg_d_loss": avg_d_loss,
-                "epoch_avg_g_r_loss": avg_g_r_loss,
-                "epoch_avg_g_e_loss": avg_g_e_loss,
+                "epoch_avg_g_loss": avg_g_loss,
                 "epoch": epoch
             })
-        return epoch_d_losses, epoch_g_r_losses, epoch_g_e_losses
+        return epoch_d_losses, epoch_g_losses
