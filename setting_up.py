@@ -52,15 +52,6 @@ class SettingUp:
         return dataset, data_loader, all_ratings
 
     def initialize_models(self):
-        '''generator = Generator(input_size=self.config.input_size, fc1_size=self.config.fc1_size,
-                              main_sizes=self.config.main_sizes,
-                              dropout_rate=self.config.dropout_rate,
-                              num_movies=self.dataset.num_movies).to(self.device)'''
-
-        '''generator = MultiChannelGenerator(input_size=self.config.input_size, fc1_size=self.config.fc1_size,
-                              main_sizes=self.config.main_sizes,
-                              dropout_rate=self.config.dropout_rate,
-                              num_items=self.dataset.num_movies).to(self.device)'''
 
         ratings_generator = RatingsGenerator(input_size=self.config.input_size,
                                              fc1_size=self.config.fc1_size,
