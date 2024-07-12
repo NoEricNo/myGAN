@@ -22,7 +22,7 @@ class Generator(nn.Module):
         for layer in self.main_layers:
             x = torch.relu(layer(x))
 
-        rating_values = torch.sigmoid(self.fc_rating_values(x)) * 5  # Assuming ratings are in the range [0, 5]
+        rating_values = torch.sigmoid(self.fc_final(x)) * 4.5 + 0.5  # Ratings in the range [0.5, 5]  # Assuming ratings are in the range [0, 5]
         existence_flags = torch.sigmoid(self.fc_existence(x))
 
         return rating_values.to_sparse(), existence_flags.to_sparse()

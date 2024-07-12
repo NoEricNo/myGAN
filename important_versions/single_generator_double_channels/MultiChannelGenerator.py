@@ -26,7 +26,7 @@ class MultiChannelGenerator(nn.Module):
         output = output.view(-1, 2, self.num_items)  # Reshape to (batch_size, 2 channels, num_items)
 
         rating_values, existence_flags = torch.chunk(output, 2, dim=1)  # Split into two channels
-        rating_values = torch.sigmoid(rating_values) * 5  # Ratings in the range [0, 5]
+        rating_values = torch.sigmoid(self.fc_final(x)) * 4.5 + 0.5  # Ratings in the range [0.5, 5]  # Ratings in the range [0, 5]
         existence_flags = torch.sigmoid(existence_flags)  # Existence flags in the range [0, 1]
 
         return rating_values.squeeze(1).to_sparse(), existence_flags.squeeze(1).to_sparse()
