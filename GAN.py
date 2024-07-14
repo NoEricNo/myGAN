@@ -3,63 +3,36 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class GAN(nn.Module):
-    def __init__(self, generator_r, generator_e, discriminator, device,
-                 optimizer_g_r, optimizer_g_e, optimizer_d, logger, wandb):
+    def __init__(self, generator_r, generator_e, main_discriminator, distribution_discriminator, latent_factor_discriminator, device,
+                 optimizer_g_r, optimizer_g_e, optimizer_d_main, optimizer_d_distribution, optimizer_d_latent, logger):
         super(GAN, self).__init__()
         self.generator_r = generator_r
         self.generator_e = generator_e
-        self.discriminator = discriminator
+        self.main_discriminator = main_discriminator
+        self.distribution_discriminator = distribution_discriminator
+        self.latent_factor_discriminator = latent_factor_discriminator
         self.device = device
         self.optimizer_g_r = optimizer_g_r
         self.optimizer_g_e = optimizer_g_e
-        self.optimizer_d = optimizer_d
+        self.optimizer_d_main = optimizer_d_main
+        self.optimizer_d_distribution = optimizer_d_distribution
+        self.optimizer_d_latent = optimizer_d_latent
         self.logger = logger
-        self.wandb = wandb
-        self.lambda_gp = 10  # Gradient penalty coefficient
 
-    def distribution_loss(self, real_ratings, fake_ratings, fake_existence):
-        mask = fake_existence.to_dense() > 0
-        real_ratings = real_ratings.to_dense()
-        fake_ratings = fake_ratings.to_dense()
+    def custom_loss(self, fake_validity_main, fake_validity_distribution, fake_validity_latent):
+        # Adversarial losses
+        adversarial_loss_main = F.binary_cross_entropy_with_logits(fake_validity_main, torch.ones_like(fake_validity_main))
+        adversarial_loss_distribution = F.binary_cross_entropy_with_logits(fake_validity_distribution, torch.ones_like(fake_validity_distribution))
+        adversarial_loss_latent = F.binary_cross_entropy_with_logits(fake_validity_latent, torch.ones_like(fake_validity_latent))
 
-        real_mean = real_ratings.sum() / real_ratings.numel()
-        fake_mean = (fake_ratings * mask).sum() / mask.sum()
-        real_std = ((real_ratings - real_mean) ** 2).sum() / real_ratings.numel()
-        fake_std = (((fake_ratings * mask) - real_mean) ** 2).sum() / mask.sum()
-
-        mean_loss = F.mse_loss(fake_mean, real_mean)
-        std_loss = F.mse_loss(fake_std, real_std)
-        return mean_loss + std_loss
-
-    def latent_factor_loss(self, fake_ratings, item_factors):
-        fake_ratings = fake_ratings.to_dense()
-        latent_representation = fake_ratings @ item_factors.T
-        reconstructed_ratings = latent_representation @ item_factors
-        return F.mse_loss(fake_ratings, reconstructed_ratings)
-
-    def custom_loss(self, fake_validity, real_ratings, fake_ratings, fake_existence, item_factors):
-        fake_ratings = fake_ratings.to_dense()
-        fake_existence = fake_existence.to_dense()
-        fake_ratings = fake_ratings * fake_existence
-
-        # Adversarial loss
-        adversarial_loss = F.binary_cross_entropy_with_logits(fake_validity, torch.ones_like(fake_validity))
-
-        # Distribution loss to match mean and standard deviation
-        distribution_loss = self.distribution_loss(real_ratings, fake_ratings, fake_existence)
-
-        # Latent factor loss to ensure alignment with item factors
-        latent_loss = self.latent_factor_loss(fake_ratings, item_factors)
-
-        # Combine all loss components with adjusted weights
-        total_loss = adversarial_loss + 0.5 * distribution_loss + 0.5 * latent_loss
+        # Combine adversarial losses
+        total_loss = (2*adversarial_loss_main + adversarial_loss_distribution + adversarial_loss_latent)/4
         return total_loss
 
-    def clip_loss(self, loss, max_value=100.0):
-        return torch.clamp(loss, max=max_value)
-
     def train_epoch(self, data_loader, num_epochs, item_factors):
-        epoch_d_losses = []
+        epoch_d_main_losses = []
+        epoch_d_distribution_losses = []
+        epoch_d_latent_losses = []
         epoch_g_r_losses = []
         epoch_g_e_losses = []
 
@@ -68,96 +41,113 @@ class GAN(nn.Module):
                 real_ratings = real_ratings.to(self.device).float()
                 real_existence = real_existence.to(self.device).float()
 
-                # Train Discriminator
-                self.optimizer_d.zero_grad()
-                real_validity = self.discriminator(real_ratings, real_existence)
+                # Log batch sizes
+                #self.logger.info(f"Batch size - real_ratings: {real_ratings.size(0)}, real_existence: {real_existence.size(0)}")
+
+                # Train Main Discriminator
+                self.optimizer_d_main.zero_grad()
+                real_validity_main = self.main_discriminator(real_ratings, real_existence)
 
                 noise = torch.randn(real_ratings.size(0), self.generator_r.input_size).to(self.device)
-                #fake_ratings, fake_existence = self.generator(noise)
-                fake_ratings = self.generator_r(noise)
-                fake_existence = self.generator_e(noise)
+                fake_ratings = self.generator_r(noise).detach()
+                fake_existence = self.generator_e(noise).detach()
 
-                fake_validity = self.discriminator(fake_ratings, fake_existence)
+                # Log batch sizes for fake data
+                #self.logger.info(f"Batch size - fake_ratings: {fake_ratings.size(0)}, fake_existence: {fake_existence.size(0)}")
 
-                real_validity_loss = F.binary_cross_entropy_with_logits(real_validity, torch.ones_like(real_validity))
-                fake_validity_loss = F.binary_cross_entropy_with_logits(fake_validity, torch.zeros_like(fake_validity))
+                # Convert to dense and apply existence mask
+                fake_ratings = fake_ratings.to_dense()
+                fake_existence = fake_existence.to_dense()
+                fake_ratings = fake_ratings * fake_existence
 
-                d_loss = real_validity_loss + fake_validity_loss
-                d_loss.backward()
-                nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=1.0)
-                self.optimizer_d.step()
+                fake_validity_main = self.main_discriminator(fake_ratings, fake_existence)
 
-                ''''# Train Generator
-                self.optimizer_g.zero_grad()
-                noise = torch.randn(real_ratings.size(0), self.generator.input_size).to(self.device)
-                fake_ratings, fake_existence = self.generator(noise)
+                real_validity_loss_main = F.binary_cross_entropy_with_logits(real_validity_main, torch.ones_like(real_validity_main))
+                fake_validity_loss_main = F.binary_cross_entropy_with_logits(fake_validity_main, torch.zeros_like(fake_validity_main))
 
-                fake_validity = self.discriminator(fake_ratings, fake_existence)
+                d_loss_main = real_validity_loss_main + fake_validity_loss_main
+                d_loss_main.backward()
+                nn.utils.clip_grad_norm_(self.main_discriminator.parameters(), max_norm=1.0)
+                self.optimizer_d_main.step()
 
-                g_loss = self.custom_loss(fake_validity, real_ratings, fake_ratings, fake_existence, item_factors)
-                g_loss.backward()
-                nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=1.0)
-                self.optimizer_g.step()'''
+                # Train Distribution Discriminator
+                self.optimizer_d_distribution.zero_grad()
+                real_validity_distribution = self.distribution_discriminator(real_ratings, fake_ratings)
+                fake_validity_distribution = self.distribution_discriminator(real_ratings, fake_ratings)
+
+                real_validity_loss_distribution = F.binary_cross_entropy_with_logits(real_validity_distribution, torch.ones_like(real_validity_distribution))
+                fake_validity_loss_distribution = F.binary_cross_entropy_with_logits(fake_validity_distribution, torch.zeros_like(fake_validity_distribution))
+
+                d_loss_distribution = real_validity_loss_distribution + fake_validity_loss_distribution
+                d_loss_distribution.backward()
+                nn.utils.clip_grad_norm_(self.distribution_discriminator.parameters(), max_norm=1.0)
+                self.optimizer_d_distribution.step()
+
+                # Train Latent Factor Discriminator
+                self.optimizer_d_latent.zero_grad()
+                real_validity_latent = self.latent_factor_discriminator(fake_ratings, item_factors)
+                fake_validity_latent = self.latent_factor_discriminator(fake_ratings, item_factors)
+
+                real_validity_loss_latent = F.binary_cross_entropy_with_logits(real_validity_latent, torch.ones_like(real_validity_latent))
+                fake_validity_loss_latent = F.binary_cross_entropy_with_logits(fake_validity_latent, torch.zeros_like(fake_validity_latent))
+
+                d_loss_latent = real_validity_loss_latent + fake_validity_loss_latent
+                d_loss_latent.backward()
+                nn.utils.clip_grad_norm_(self.latent_factor_discriminator.parameters(), max_norm=1.0)
+                self.optimizer_d_latent.step()
+
                 # Train Ratings Generator
-
                 self.optimizer_g_r.zero_grad()
-                noise = torch.randn(real_ratings.size(0), self.generator_r.input_size).to(self.device)
-                fake_ratings = self.generator_r(noise)
-                fake_existence = self.generator_e(noise)
+                noise_r = torch.randn(real_ratings.size(0), self.generator_r.input_size).to(self.device)
+                fake_ratings = self.generator_r(noise_r)
+                noise_e = torch.randn(real_ratings.size(0), self.generator_e.input_size).to(self.device)
+                fake_existence = self.generator_e(noise_e)  # Generate new fake existence flags
 
-                fake_validity = self.discriminator(fake_ratings, fake_existence)
+                # Convert to dense and apply existence mask
+                fake_ratings = fake_ratings.to_dense()
+                fake_existence = fake_existence.to_dense()
+                fake_ratings = fake_ratings * fake_existence
 
-                g_loss_ratings = self.custom_loss(fake_validity, real_ratings, fake_ratings, fake_existence, item_factors)
+                fake_validity_main = self.main_discriminator(fake_ratings, fake_existence)
+                fake_validity_distribution = self.distribution_discriminator(real_ratings, fake_ratings)
+                fake_validity_latent = self.latent_factor_discriminator(fake_ratings, item_factors)
+
+                g_loss_ratings = self.custom_loss(fake_validity_main, fake_validity_distribution, fake_validity_latent)
                 g_loss_ratings.backward()
                 nn.utils.clip_grad_norm_(self.generator_r.parameters(), max_norm=1.0)
                 self.optimizer_g_r.step()
 
                 # Train Existence Generator
-
                 self.optimizer_g_e.zero_grad()
-                noise = torch.randn(real_ratings.size(0), self.generator_e.input_size).to(self.device)
-                fake_ratings = self.generator_r(noise)
-                fake_existence = self.generator_e(noise)
+                noise_e = torch.randn(real_ratings.size(0), self.generator_e.input_size).to(self.device)
+                fake_existence = self.generator_e(noise_e)
+                noise_r = torch.randn(real_ratings.size(0), self.generator_r.input_size).to(self.device)
+                fake_ratings = self.generator_r(noise_r)  # Generate new fake ratings
 
-                fake_validity = self.discriminator(fake_ratings, fake_existence)
+                # Convert to dense and apply existence mask
+                fake_ratings = fake_ratings.to_dense()
+                fake_existence = fake_existence.to_dense()
+                fake_ratings = fake_ratings * fake_existence
 
-                g_loss_existence = self.custom_loss(fake_validity, real_ratings, fake_ratings, fake_existence, item_factors)
+                fake_validity_main = self.main_discriminator(fake_ratings, fake_existence)
+
+                g_loss_existence = F.binary_cross_entropy_with_logits(fake_validity_main, torch.ones_like(fake_validity_main))  # Adversarial loss
+
                 g_loss_existence.backward()
-
                 nn.utils.clip_grad_norm_(self.generator_e.parameters(), max_norm=1.0)
                 self.optimizer_g_e.step()
 
-                d_loss = self.clip_loss(d_loss)
-                g_loss_ratings = self.clip_loss(g_loss_ratings)
-                g_loss_existence = self.clip_loss(g_loss_existence)
-
-
-                epoch_d_losses.append(d_loss.item())
+                epoch_d_main_losses.append(d_loss_main.item())
+                epoch_d_distribution_losses.append(d_loss_distribution.item())
+                epoch_d_latent_losses.append(d_loss_latent.item())
                 epoch_g_r_losses.append(g_loss_ratings.item())
                 epoch_g_e_losses.append(g_loss_existence.item())
 
-                # Log to wandb
-                self.wandb.log({
-                    "d_loss": d_loss.item(),
-                    "g_r_loss": g_loss_ratings.item(),
-                    "g_e_loss": g_loss_existence.item(),
-                    "epoch": epoch
-                })
-
             self.logger.info(
-                f"Epoch {epoch + 1}/{num_epochs}, D Loss: {sum(epoch_d_losses) / len(epoch_d_losses):.4f}, "
-                f"G Loss: {sum(epoch_g_r_losses) / len(epoch_g_r_losses):.4f}, "
-                f"G Loss: {sum(epoch_g_e_losses) / len(epoch_g_e_losses):.4f}" )
+                f"Epoch {epoch + 1}/{num_epochs}, D Main Loss: {sum(epoch_d_main_losses) / len(epoch_d_main_losses):.4f}, "
+                f"D Distribution Loss: {sum(epoch_d_distribution_losses) / len(epoch_d_distribution_losses):.4f}, "
+                f"D Latent Loss: {sum(epoch_d_latent_losses) / len(epoch_d_latent_losses):.4f}, "
+                f"G Ratings Loss: {sum(epoch_g_r_losses) / len(epoch_g_r_losses):.4f}, "
+                f"G Existence Loss: {sum(epoch_g_e_losses) / len(epoch_g_e_losses):.4f}")
 
-            avg_d_loss = sum(epoch_d_losses) / len(epoch_d_losses)
-            avg_g_r_loss = sum(epoch_g_r_losses) / len(epoch_g_r_losses)
-            avg_g_e_loss = sum(epoch_g_e_losses) / len(epoch_g_e_losses)
-
-            # Log epoch averages
-            self.wandb.log({
-                "epoch_avg_d_loss": avg_d_loss,
-                "epoch_avg_g_r_loss": avg_g_r_loss,
-                "epoch_avg_g_e_loss": avg_g_e_loss,
-                "epoch": epoch
-            })
-        return epoch_d_losses, epoch_g_r_losses, epoch_g_e_losses
+        return epoch_d_main_losses, epoch_d_distribution_losses, epoch_d_latent_losses, epoch_g_r_losses, epoch_g_e_losses

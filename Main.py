@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 from setting_up import SettingUp
 import torch
 
-
 class Config:
     def __init__(self):
         # Dataset parameters
@@ -14,19 +13,34 @@ class Config:
         self.latent_dim = 50  # Latent dimension for SVD
         self.dropout_rate = 0.3
         self.fc1_size = 2048  # Example size for the fully connected layer in the generator
-        self.main_sizes = [2048, 4096, 4096, 2048]  # Example sizes for the main layers in the generator
+        self.main_sizes = [2048, 2048]  # Example sizes for the main layers in the generator
 
-        # Discriminator parameters
-        self.disc_fc1_size = 128
-        self.disc_fc2_size = 128
-        self.disc_fc3_size = 64
+        # Main Discriminator parameters
+        self.main_disc_fc1_size = 128
+        self.main_disc_fc2_size = 128
+        self.main_disc_fc3_size = 64
+
+        # Distribution Discriminator parameters
+        self.dist_disc_fc1_size = 128
+        self.dist_disc_fc2_size = 128
+        self.dist_disc_fc3_size = 64
+
+        # Latent Factor Discriminator parameters
+        self.latent_disc_fc1_size = 128
+        self.latent_disc_fc2_size = 128
+        self.latent_disc_fc3_size = 64
 
         # Training parameters
         self.num_epochs = 1200
-        self.lr_g = 0.00005  # Further lowered learning rate for the generator
-        self.lr_d = 0.000005  # Further lowered learning rate for the discriminator
-        self.betas = (0.5, 0.999)
 
+        # Separate learning rates for each component
+        self.lr_g_ratings = 0.00005  # Learning rate for the ratings generator
+        self.lr_g_existence = 0.000005  # Learning rate for the existence generator
+        self.lr_d_main = 0.000005  # Learning rate for the main discriminator
+        self.lr_d_distribution = 0.000005  # Learning rate for the distribution discriminator
+        self.lr_d_latent = 0.00005  # Learning rate for the latent factor discriminator
+
+        self.betas = (0.5, 0.999)
 
 # Load configuration
 config = Config()
@@ -42,23 +56,24 @@ device = setup.device
 
 # Get item factors
 item_factors = setup.get_item_factors()
-print(f"Shape of item_factors: {item_factors.shape}, dtype: {item_factors.dtype}")
+#print(f"Shape of item_factors: {item_factors.shape}, dtype: {item_factors.dtype}")
 
 # Train the model
-epoch_d_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(setup.data_loader, num_epochs=config.num_epochs,
-                                                       item_factors=item_factors)
+epoch_d_main_losses, epoch_d_distribution_losses, epoch_d_latent_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(
+    setup.data_loader, num_epochs=config.num_epochs, item_factors=item_factors)
 
 # Plot the losses
 plt.figure(figsize=(10, 5))
-plt.plot(epoch_d_losses, label='Discriminator Loss')
-plt.plot(epoch_g_r_losses, label='Generator(R) Loss')
-plt.plot(epoch_g_e_losses, label='Generator(E) Loss')
+plt.plot(epoch_d_main_losses, label='Main Discriminator Loss')
+plt.plot(epoch_d_distribution_losses, label='Distribution Discriminator Loss')
+plt.plot(epoch_d_latent_losses, label='Latent Factor Discriminator Loss')
+plt.plot(epoch_g_r_losses, label='Ratings Generator Loss')
+plt.plot(epoch_g_e_losses, label='Existence Generator Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
 plt.savefig("Results/loss_plot.png")
 plt.show()
-
 
 def post_process(ratings, existence):
     # Round ratings to nearest 0.5
@@ -69,18 +84,18 @@ def post_process(ratings, existence):
     ratings = ratings * existence
     return ratings, existence
 
-
-def generate_samples(generator, num_samples=5):
+def generate_samples(generator_r, generator_e, num_samples=5):
     # Generate noise
-    noise = torch.randn(num_samples, generator.input_size).to(device)
+    noise = torch.randn(num_samples, generator_r.input_size).to(device)
 
     # Generate fake ratings and existence flags
-    fake_ratings, fake_existence = generator(noise)
+    fake_ratings = generator_r(noise)
+    fake_existence = generator_e(noise)
     fake_ratings = fake_ratings.to_dense()
     fake_existence = fake_existence.to_dense()
 
     # Post-process the generated data
-    #fake_ratings, fake_existence = post_process(fake_ratings, fake_existence)
+    fake_ratings, fake_existence = post_process(fake_ratings, fake_existence)
 
     for i in range(num_samples):
         print(f"Sample {i + 1}:")
@@ -90,6 +105,5 @@ def generate_samples(generator, num_samples=5):
         print(fake_existence[i].detach().cpu().numpy())  # Use detach() before converting to numpy
         print("\n")
 
-
 # Generate and print some samples
-generate_samples(setup.gan.generator)
+generate_samples(setup.gan.generator_r, setup.gan.generator_e)
