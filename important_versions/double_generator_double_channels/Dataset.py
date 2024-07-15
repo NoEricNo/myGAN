@@ -46,16 +46,23 @@ class MovieLensDataset(Dataset):
 
         return rating_values, existence_values
 
+import torch
+import torch
+
 def sparse_collate(batch):
-    # Convert the list of numpy.ndarrays to a single numpy.ndarray
-    ratings = np.array([item[0].toarray() if isinstance(item[0], np.ndarray) else item[0].toarray() for item in batch])
-    existence = np.array([item[1].toarray() if isinstance(item[1], np.ndarray) else item[1].toarray() for item in batch])
+    data_list, existence_list = zip(*batch)
 
-    # Convert the numpy.ndarrays to PyTorch tensors
-    ratings_tensor = torch.tensor(ratings)
-    existence_tensor = torch.tensor(existence)
+    # Ensure the data_list and existence_list are sparse tensors
+    data_tensors = [torch.tensor(data.toarray()).to_sparse() for data in data_list]
+    existence_tensors = [torch.tensor(existence.toarray()).to_sparse() for existence in existence_list]
 
-    return ratings_tensor, existence_tensor
+    # Stack the sparse tensors without converting to dense format
+    data_tensors = torch.stack(data_tensors)
+    existence_tensors = torch.stack(existence_tensors)
 
+    # Print shapes for debugging
+    #print("data_tensors shape in sparse_collate:", data_tensors.shape)
+    #print("existence_tensors shape in sparse_collate:", existence_tensors.shape)
 
+    return data_tensors, existence_tensors
 

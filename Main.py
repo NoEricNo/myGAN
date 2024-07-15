@@ -13,7 +13,7 @@ class Config:
         self.latent_dim = 50  # Latent dimension for SVD
         self.dropout_rate = 0.3
         self.fc1_size = 2048  # Example size for the fully connected layer in the generator
-        self.main_sizes = [2048, 2048]  # Example sizes for the main layers in the generator
+        self.main_sizes = [4096, 4096, 4096, 4096]  # Example sizes for the main layers in the generator
 
         # Main Discriminator parameters
         self.main_disc_fc1_size = 128
@@ -31,7 +31,7 @@ class Config:
         self.latent_disc_fc3_size = 64
 
         # Training parameters
-        self.num_epochs = 1200
+        self.num_epochs = 600
 
         # Separate learning rates for each component
         self.lr_g_ratings = 0.00005  # Learning rate for the ratings generator
