@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class MainDiscriminator(nn.Module):
-    def __init__(self, num_movies, dropout_rate, fc1_size, fc2_size, fc3_size):
+    def __init__(self, num_movies, dropout_rate, fc1_size, fc2_size, fc3_size, minibatch_features=10, minibatch_kernel_dim=3):
         super(MainDiscriminator, self).__init__()
         self.num_movies = num_movies
         self.dropout_rate = dropout_rate
@@ -13,7 +14,11 @@ class MainDiscriminator(nn.Module):
         self.fc1 = nn.Linear(input_size, fc1_size)
         self.fc2 = nn.Linear(fc1_size, fc2_size)
         self.fc3 = nn.Linear(fc2_size, fc3_size)
-        self.validity = nn.Linear(fc3_size, 1)
+
+        # Add Minibatch Discrimination layer
+        self.minibatch = MinibatchDiscrimination(fc3_size, minibatch_features, minibatch_kernel_dim)
+
+        self.validity = nn.Linear(fc3_size + minibatch_features, 1)
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, rating_values, existence_flags):
@@ -34,12 +39,39 @@ class MainDiscriminator(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.dropout(x)
         x = torch.relu(self.fc3(x))
+
+        # Apply Minibatch Discrimination
+        minibatch_features = self.minibatch(x)
+
+        # Concatenate original features with minibatch features
+        x = torch.cat([x, minibatch_features], dim=1)
+
         validity = self.validity(x)
 
         return validity
 
-import torch
-import torch.nn as nn
+
+class MinibatchDiscrimination(nn.Module):
+    def __init__(self, in_features, out_features, kernel_dim):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.kernel_dim = kernel_dim
+
+        self.T = nn.Parameter(torch.Tensor(in_features, out_features, kernel_dim))
+        nn.init.normal_(self.T, 0, 1)
+
+    def forward(self, x):
+        matrices = x.mm(self.T.view(self.in_features, -1))
+        matrices = matrices.view(-1, self.out_features, self.kernel_dim)
+
+        M = matrices.unsqueeze(0)
+        M_T = M.permute(1, 0, 2, 3)
+        norm = torch.abs(M - M_T).sum(3)
+        expnorm = torch.exp(-norm)
+        o_b = (expnorm.sum(0) - 1)
+
+        return o_b
 
 class DistributionDiscriminator(nn.Module):
     def __init__(self, num_movies, dropout_rate, fc1_size, fc2_size, fc3_size):
