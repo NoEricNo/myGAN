@@ -62,6 +62,19 @@ item_factors = setup.get_item_factors()
 epoch_d_main_losses, epoch_d_distribution_losses, epoch_d_latent_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(
     setup.data_loader, num_epochs=config.num_epochs, item_factors=item_factors)
 
+# After training
+torch.save({
+    'generator_r_state_dict': setup.gan.generator_r.state_dict(),
+    'generator_e_state_dict': setup.gan.generator_e.state_dict(),
+    'discriminator_main_state_dict': setup.gan.discriminator_main.state_dict(),
+    'discriminator_distribution_state_dict': setup.gan.discriminator_distribution.state_dict(),
+    'discriminator_latent_state_dict': setup.gan.discriminator_latent.state_dict(),
+    'optimizer_g_state_dict': setup.gan.optimizer_g.state_dict(),
+    'optimizer_d_state_dict': setup.gan.optimizer_d.state_dict(),
+}, 'most_recent_gan_model.pth')
+
+print("Model saved successfully.")
+
 # Plot the losses
 plt.figure(figsize=(10, 5))
 plt.plot(epoch_d_main_losses, label='Main Discriminator Loss')
@@ -75,35 +88,3 @@ plt.legend()
 plt.savefig("Results/loss_plot.png")
 plt.show()
 
-def post_process(ratings, existence):
-    # Round ratings to nearest 0.5
-    ratings = torch.round(ratings * 2) / 2.0
-    # Threshold existence to binary values
-    existence = (existence > 0.5).float()
-    # Apply existence mask
-    ratings = ratings * existence
-    return ratings, existence
-
-def generate_samples(generator_r, generator_e, num_samples=5):
-    # Generate noise
-    noise = torch.randn(num_samples, generator_r.input_size).to(device)
-
-    # Generate fake ratings and existence flags
-    fake_ratings = generator_r(noise)
-    fake_existence = generator_e(noise)
-    fake_ratings = fake_ratings.to_dense()
-    fake_existence = fake_existence.to_dense()
-
-    # Post-process the generated data
-    fake_ratings, fake_existence = post_process(fake_ratings, fake_existence)
-
-    for i in range(num_samples):
-        print(f"Sample {i + 1}:")
-        print("Ratings:")
-        print(fake_ratings[i].detach().cpu().numpy())  # Use detach() before converting to numpy
-        print("Existence Flags:")
-        print(fake_existence[i].detach().cpu().numpy())  # Use detach() before converting to numpy
-        print("\n")
-
-# Generate and print some samples
-generate_samples(setup.gan.generator_r, setup.gan.generator_e)
