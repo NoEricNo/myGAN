@@ -10,13 +10,17 @@ from GAN import GAN
 from sklearn.decomposition import TruncatedSVD
 
 class SettingUp:
-    def __init__(self, config):
+    def __init__(self, config, load_data=True):
         self.config = config
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger = self.setup_logging()
-        self.dataset, self.data_loader, self.all_ratings = self.load_data()
-        self.item_factors = self.perform_svd(self.all_ratings.numpy(), self.config.latent_dim)
-        self.gan = self.initialize_models()
+
+        if load_data:
+            self.dataset, self.data_loader, self.all_ratings = self.load_data()
+            self.item_factors = self.perform_svd(self.all_ratings.numpy(), self.config.latent_dim)
+            self.gan = self.initialize_models()
+        else:
+            self.gan = None
 
     def setup_logging(self):
         log_dir = "Results"
@@ -101,3 +105,21 @@ class SettingUp:
     def get_item_factors(self):
         item_factors = torch.tensor(self.item_factors, dtype=torch.float32).to(self.device)
         return item_factors
+
+    def load_pretrained_model(self, model_path):
+        self.gan = self.initialize_models()  # Initialize the model structure
+        checkpoint = torch.load(model_path, map_location=self.device)
+
+        self.gan.generator_r.load_state_dict(checkpoint['generator_r_state_dict'])
+        self.gan.generator_e.load_state_dict(checkpoint['generator_e_state_dict'])
+        self.gan.main_discriminator.load_state_dict(checkpoint['main_discriminator_state_dict'])
+        self.gan.distribution_discriminator.load_state_dict(checkpoint['distribution_discriminator_state_dict'])
+        self.gan.latent_factor_discriminator.load_state_dict(checkpoint['latent_factor_discriminator_state_dict'])
+
+        self.gan.eval()  # Set the model to evaluation mode
+
+        # Disable gradient computation for evaluation
+        for param in self.gan.parameters():
+            param.requires_grad = False
+
+        print("Model loaded successfully and set to evaluation mode.")

@@ -62,16 +62,21 @@ item_factors = setup.get_item_factors()
 epoch_d_main_losses, epoch_d_distribution_losses, epoch_d_latent_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(
     setup.data_loader, num_epochs=config.num_epochs, item_factors=item_factors)
 
+#print("GAN attributes:", dir(setup.gan))
+
 # After training
 torch.save({
     'generator_r_state_dict': setup.gan.generator_r.state_dict(),
     'generator_e_state_dict': setup.gan.generator_e.state_dict(),
-    'discriminator_main_state_dict': setup.gan.discriminator_main.state_dict(),
-    'discriminator_distribution_state_dict': setup.gan.discriminator_distribution.state_dict(),
-    'discriminator_latent_state_dict': setup.gan.discriminator_latent.state_dict(),
-    'optimizer_g_state_dict': setup.gan.optimizer_g.state_dict(),
-    'optimizer_d_state_dict': setup.gan.optimizer_d.state_dict(),
-}, 'most_recent_gan_model.pth')
+    'main_discriminator_state_dict': setup.gan.main_discriminator.state_dict(),
+    'distribution_discriminator_state_dict': setup.gan.distribution_discriminator.state_dict(),
+    'latent_factor_discriminator_state_dict': setup.gan.latent_factor_discriminator.state_dict(),
+    'optimizer_g_r_state_dict': setup.gan.optimizer_g_r.state_dict(),
+    'optimizer_g_e_state_dict': setup.gan.optimizer_g_e.state_dict(),
+    'optimizer_d_main_state_dict': setup.gan.optimizer_d_main.state_dict(),
+    'optimizer_d_distribution_state_dict': setup.gan.optimizer_d_distribution.state_dict(),
+    'optimizer_d_latent_state_dict': setup.gan.optimizer_d_latent.state_dict(),
+}, 'gan_model.pth')
 
 print("Model saved successfully.")
 

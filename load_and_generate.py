@@ -38,6 +38,19 @@ def generate_samples(device, generator_r, generator_e, num_samples=1000, batch_s
     all_fake_ratings_np = all_fake_ratings.numpy()
     all_fake_existence_np = all_fake_existence.numpy()
 
+    # Create intermediate DataFrame
+    df_matrix = pd.DataFrame(all_fake_ratings_np)
+    df_matrix.index.name = 'userId'
+    df_matrix.columns.name = 'movieId'
+
+    # Print summary statistics
+    print("\nRating Matrix Summary:")
+    print(f"Shape: {df_matrix.shape}")
+    print(f"Non-null values: {df_matrix.count().sum()}")
+    print(f"Sparsity: {1 - df_matrix.count().sum() / (df_matrix.shape[0] * df_matrix.shape[1]):.2%}")
+    print("\nRating Distribution:")
+    print(df_matrix.unstack().value_counts(normalize=True).sort_index())
+
     # Create a list to store all ratings
     ratings_list = []
 
@@ -57,20 +70,37 @@ def generate_samples(device, generator_r, generator_e, num_samples=1000, batch_s
 
     return df
 
-config = Config()
+def load_gan_model(setup, model_path):
+    checkpoint = torch.load(model_path, map_location=setup.device)
 
-# Initialize SettingUp
-setup = SettingUp(config)
+    setup.gan.generator_r.load_state_dict(checkpoint['generator_r_state_dict'])
+    setup.gan.generator_e.load_state_dict(checkpoint['generator_e_state_dict'])
+    setup.gan.main_discriminator.load_state_dict(checkpoint['main_discriminator_state_dict'])
+    setup.gan.distribution_discriminator.load_state_dict(checkpoint['distribution_discriminator_state_dict'])
+    setup.gan.latent_factor_discriminator.load_state_dict(checkpoint['latent_factor_discriminator_state_dict'])
 
-checkpoint = torch.load('most_recent_gan_model.pth')
-setup.gan.generator_r.load_state_dict(checkpoint['generator_r_state_dict'])
-setup.gan.generator_e.load_state_dict(checkpoint['generator_e_state_dict'])
-setup.gan.discriminator_main.load_state_dict(checkpoint['discriminator_main_state_dict'])
-setup.gan.discriminator_distribution.load_state_dict(checkpoint['discriminator_distribution_state_dict'])
-setup.gan.discriminator_latent.load_state_dict(checkpoint['discriminator_latent_state_dict'])
-setup.gan.optimizer_g.load_state_dict(checkpoint['optimizer_g_state_dict'])
-setup.gan.optimizer_d.load_state_dict(checkpoint['optimizer_d_state_dict'])
+    setup.gan.eval()  # Set the model to evaluation mode
 
-print("Model loaded successfully.")
-# Generate and print some samples
-generate_samples(setup.device, setup.gan.generator_r, setup.gan.generator_e)
+    # Disable gradient computation for evaluation
+    for param in setup.gan.parameters():
+        param.requires_grad = False
+
+    print("Model loaded successfully and set to evaluation mode.")
+
+def main():
+    config = Config()
+
+    # Initialize SettingUp without loading data or initializing models
+    setup = SettingUp(config, load_data=False)
+
+    # Load the pretrained model
+    setup.load_pretrained_model('gan_model.pth')
+
+    # Set a fixed seed for reproducibility
+    torch.manual_seed(42)
+
+    # Generate samples
+    generate_samples(setup.device, setup.gan.generator_r, setup.gan.generator_e)
+
+if __name__ == "__main__":
+    main()
