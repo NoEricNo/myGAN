@@ -42,54 +42,55 @@ class Config:
 
         self.betas = (0.5, 0.999)
 
-# Load configuration
-config = Config()
+def main():
+    # Load configuration
+    config = Config()
 
-# Initialize SettingUp
-setup = SettingUp(config)
+    # Initialize SettingUp
+    setup = SettingUp(config, load_data=True)
 
-# Example logging
-setup.logger.info("This is a log message for a new run.")
+    # Example logging
+    setup.logger.info("This is a log message for a new run.")
 
-# Set device
-device = setup.device
+    # Set device
+    device = setup.device
 
-# Get item factors
-item_factors = setup.get_item_factors()
-#print(f"Shape of item_factors: {item_factors.shape}, dtype: {item_factors.dtype}")
+    # Get item factors
+    item_factors = setup.get_item_factors()
 
-# Train the model
-epoch_d_main_losses, epoch_d_distribution_losses, epoch_d_latent_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(
-    setup.data_loader, num_epochs=config.num_epochs, item_factors=item_factors)
+    # Train the model
+    epoch_d_main_losses, epoch_d_distribution_losses, epoch_d_latent_losses, epoch_g_r_losses, epoch_g_e_losses = setup.gan.train_epoch(
+        setup.data_loader, num_epochs=config.num_epochs, item_factors=item_factors)
 
-#print("GAN attributes:", dir(setup.gan))
+    # Save the model
+    torch.save({
+        'generator_r_state_dict': setup.gan.generator_r.state_dict(),
+        'generator_e_state_dict': setup.gan.generator_e.state_dict(),
+        'main_discriminator_state_dict': setup.gan.main_discriminator.state_dict(),
+        'distribution_discriminator_state_dict': setup.gan.distribution_discriminator.state_dict(),
+        'latent_factor_discriminator_state_dict': setup.gan.latent_factor_discriminator.state_dict(),
+        'optimizer_g_r_state_dict': setup.gan.optimizer_g_r.state_dict(),
+        'optimizer_g_e_state_dict': setup.gan.optimizer_g_e.state_dict(),
+        'optimizer_d_main_state_dict': setup.gan.optimizer_d_main.state_dict(),
+        'optimizer_d_distribution_state_dict': setup.gan.optimizer_d_distribution.state_dict(),
+        'optimizer_d_latent_state_dict': setup.gan.optimizer_d_latent.state_dict(),
+        'num_movies': setup.dataset.num_movies  # Add this line
+    }, 'gan_model.pth')
 
-# After training
-torch.save({
-    'generator_r_state_dict': setup.gan.generator_r.state_dict(),
-    'generator_e_state_dict': setup.gan.generator_e.state_dict(),
-    'main_discriminator_state_dict': setup.gan.main_discriminator.state_dict(),
-    'distribution_discriminator_state_dict': setup.gan.distribution_discriminator.state_dict(),
-    'latent_factor_discriminator_state_dict': setup.gan.latent_factor_discriminator.state_dict(),
-    'optimizer_g_r_state_dict': setup.gan.optimizer_g_r.state_dict(),
-    'optimizer_g_e_state_dict': setup.gan.optimizer_g_e.state_dict(),
-    'optimizer_d_main_state_dict': setup.gan.optimizer_d_main.state_dict(),
-    'optimizer_d_distribution_state_dict': setup.gan.optimizer_d_distribution.state_dict(),
-    'optimizer_d_latent_state_dict': setup.gan.optimizer_d_latent.state_dict(),
-}, 'gan_model.pth')
+    print("Model saved successfully.")
 
-print("Model saved successfully.")
+    # Plot the losses
+    plt.figure(figsize=(10, 5))
+    plt.plot(epoch_d_main_losses, label='Main Discriminator Loss')
+    plt.plot(epoch_d_distribution_losses, label='Distribution Discriminator Loss')
+    plt.plot(epoch_d_latent_losses, label='Latent Factor Discriminator Loss')
+    plt.plot(epoch_g_r_losses, label='Ratings Generator Loss')
+    plt.plot(epoch_g_e_losses, label='Existence Generator Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("Results/loss_plot.png")
+    plt.show()
 
-# Plot the losses
-plt.figure(figsize=(10, 5))
-plt.plot(epoch_d_main_losses, label='Main Discriminator Loss')
-plt.plot(epoch_d_distribution_losses, label='Distribution Discriminator Loss')
-plt.plot(epoch_d_latent_losses, label='Latent Factor Discriminator Loss')
-plt.plot(epoch_g_r_losses, label='Ratings Generator Loss')
-plt.plot(epoch_g_e_losses, label='Existence Generator Loss')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-plt.savefig("Results/loss_plot.png")
-plt.show()
-
+if __name__ == "__main__":
+    main()

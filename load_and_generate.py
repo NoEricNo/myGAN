@@ -12,9 +12,11 @@ def post_process(ratings, existence):
     ratings = ratings * existence
     return ratings, existence
 
-def generate_samples(device, generator_r, generator_e, num_samples=1000, batch_size=100, num_movies=9724):
+def generate_samples(device, generator_r, generator_e, num_samples=1000, batch_size=100):
     all_fake_ratings = []
     all_fake_existence = []
+
+    num_movies = generator_r.fc_final.out_features  # Get the number of movies from the generator
 
     for i in range(0, num_samples, batch_size):
         current_batch_size = min(batch_size, num_samples - i)

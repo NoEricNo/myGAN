@@ -18,8 +18,12 @@ class SettingUp:
         if load_data:
             self.dataset, self.data_loader, self.all_ratings = self.load_data()
             self.item_factors = self.perform_svd(self.all_ratings.numpy(), self.config.latent_dim)
-            self.gan = self.initialize_models()
+            self.gan = self.initialize_models(self.dataset.num_movies)
         else:
+            self.dataset = None
+            self.data_loader = None
+            self.all_ratings = None
+            self.item_factors = None
             self.gan = None
 
     def setup_logging(self):
@@ -48,13 +52,13 @@ class SettingUp:
         all_ratings = torch.tensor(dataset.rating_matrix.toarray(), dtype=torch.float32)
         return dataset, data_loader, all_ratings
 
-    def initialize_models(self):
+    def initialize_models(self, num_movies):
         ratings_generator = RatingsGenerator(
             input_size=self.config.input_size,
             fc1_size=self.config.fc1_size,
             main_sizes=self.config.main_sizes,
             dropout_rate=self.config.dropout_rate,
-            num_items=self.dataset.num_movies
+            num_items=num_movies
         ).to(self.device)
 
         existence_generator = ExistenceGenerator(
@@ -62,11 +66,11 @@ class SettingUp:
             fc1_size=self.config.fc1_size,
             main_sizes=self.config.main_sizes,
             dropout_rate=self.config.dropout_rate,
-            num_items=self.dataset.num_movies
+            num_items=num_movies
         ).to(self.device)
 
         main_discriminator = MainDiscriminator(
-            num_movies=self.dataset.num_movies,
+            num_movies=num_movies,
             dropout_rate=self.config.dropout_rate,
             fc1_size=self.config.main_disc_fc1_size,
             fc2_size=self.config.main_disc_fc2_size,
@@ -74,7 +78,7 @@ class SettingUp:
         ).to(self.device)
 
         distribution_discriminator = DistributionDiscriminator(
-            num_movies=self.dataset.num_movies,
+            num_movies=num_movies,
             dropout_rate=self.config.dropout_rate,
             fc1_size=self.config.dist_disc_fc1_size,
             fc2_size=self.config.dist_disc_fc2_size,
@@ -82,7 +86,7 @@ class SettingUp:
         ).to(self.device)
 
         latent_factor_discriminator = LatentFactorDiscriminator(
-            num_movies=self.dataset.num_movies,
+            num_movies=num_movies,
             latent_dim=self.config.latent_dim,
             dropout_rate=self.config.dropout_rate,
             fc1_size=self.config.latent_disc_fc1_size,
@@ -107,8 +111,16 @@ class SettingUp:
         return item_factors
 
     def load_pretrained_model(self, model_path):
-        self.gan = self.initialize_models()  # Initialize the model structure
         checkpoint = torch.load(model_path, map_location=self.device)
+
+        # Determine the number of movies from the generator's final layer
+        generator_r_state_dict = checkpoint['generator_r_state_dict']
+        fc_final_weight = generator_r_state_dict['fc_final.weight']
+        num_movies = fc_final_weight.size(0)  # This is directly the number of movies
+
+        print(f"Detected number of movies: {num_movies}")
+
+        self.gan = self.initialize_models(num_movies)  # Initialize the model structure
 
         self.gan.generator_r.load_state_dict(checkpoint['generator_r_state_dict'])
         self.gan.generator_e.load_state_dict(checkpoint['generator_e_state_dict'])
@@ -122,4 +134,4 @@ class SettingUp:
         for param in self.gan.parameters():
             param.requires_grad = False
 
-        print("Model loaded successfully and set to evaluation mode.")
+        print(f"Model loaded successfully and set to evaluation mode. Number of movies: {num_movies}")
