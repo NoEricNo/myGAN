@@ -3,10 +3,10 @@ import logging
 import os
 from datetime import datetime
 from torch.utils.data import DataLoader
-from Dataset import MovieLensDataset, sparse_collate
+from dataset import MovieLensDataset, sparse_collate
 from SeparateGenerator import RatingsGenerator, ExistenceGenerator
 from Discriminator import MainDiscriminator, DistributionDiscriminator, LatentFactorDiscriminator
-from GAN import GAN
+from gan import GAN
 from sklearn.decomposition import TruncatedSVD
 
 class SettingUp:
