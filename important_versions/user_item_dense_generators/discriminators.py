@@ -6,37 +6,31 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-
 class UserAttention(nn.Module):
     def __init__(self, num_items, embed_dim, num_heads):
         super(UserAttention, self).__init__()
         self.attention = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads)
-        self.embedding = nn.Linear(num_items, embed_dim)
+        self.embedding = nn.Linear(num_items, embed_dim)  # Ensure embed_dim is consistent
 
     def forward(self, rating_matrix):
-        # rating_matrix shape: (batch_size, num_users, num_items)
-        batch_size, num_users, num_items = rating_matrix.shape
-        print(f"Shape of rating_matrix: {rating_matrix.shape}")
-        # Embed each user's rating vector
-        embedded_users = self.embedding(rating_matrix)  # Shape: (batch_size, num_users, embed_dim)
-        print(f"Shape of embedded_users: {embedded_users.shape}")
+        print(f"Shape before embedding: {rating_matrix.shape}")  # Print input shape
+        embedded_users = self.embedding(rating_matrix)
+        print(f"Shape after embedding: {embedded_users.shape}")  # Print output shape
         # Transpose to (num_users, batch_size, embed_dim) for attention
         embedded_users = embedded_users.transpose(0, 1)
-
+        print(f"Shape after transpose: {embedded_users.shape}")  # Print shape after transpose
         # Apply self-attention across users
         attn_output, _ = self.attention(embedded_users, embedded_users, embedded_users)
-
+        print(f"Shape after attention: {attn_output.shape}")  # Print shape after attention
         # Transpose back to (batch_size, num_users, embed_dim)
         attn_output = attn_output.transpose(0, 1)
-
         return attn_output
 
 
-# Integration into UserRatingCritic
 class UserRatingCritic(nn.Module):
-    def __init__(self, num_items, window_size=5, embed_dim=32, num_heads=4):
+    def __init__(self, num_items, window_size=5, embed_dim=64, num_heads=4):
         super(UserRatingCritic, self).__init__()
-        self.window_size = window_size
+        self.window_size = window_size  # How many users to compare simultaneously
         self.attention_layer = UserAttention(num_items, embed_dim, num_heads)
         self.fc = nn.Sequential(
             spectral_norm(nn.Linear(embed_dim * window_size, 128)),
@@ -47,25 +41,34 @@ class UserRatingCritic(nn.Module):
         )
 
     def forward(self, rating_matrix):
-        # Replace 0s with NaN
-        rating_matrix = rating_matrix.clone()
-        rating_matrix[rating_matrix == 0] = float('nan')
-
-        batch_size, num_users, num_items = rating_matrix.size()
-        sliding_windows = []
+        print(f"Initial shape: {rating_matrix.shape}")  # Print initial shape
 
         # Apply attention across users
         attn_output = self.attention_layer(rating_matrix)
+        print(f"Shape after attention: {attn_output.shape}")  # Print shape after attention
 
-        # Slide over users rather than just ratings
-        for i in range(num_users - self.window_size + 1):
-            user_window = attn_output[:, i:i + self.window_size, :]
-            user_window = user_window.view(batch_size, -1)  # Flatten the window
+        # Slide over the batch dimension to compare groups of users
+        sliding_windows = []
+        batch_size = attn_output.size(0)
+
+        # Adjusting the sliding window to correctly handle 2D data
+        for i in range(batch_size - self.window_size + 1):  # Sliding over total users in batch
+            user_window = attn_output[i:i + self.window_size, :]  # Index only on two dimensions
+            #print(f"Shape of user_window: {user_window.shape}")  # Print shape of the sliding window
+            user_window = user_window.view(self.window_size, -1)  # Flatten the window if needed
             sliding_windows.append(user_window)
 
         sliding_windows = torch.stack(sliding_windows)
+        print(f"After sliding window: {sliding_windows.shape}")  # Print shape after stacking windows
+
+        sliding_windows = sliding_windows.view(-1, self.window_size * attn_output.size(-1))  # Ensure correct flattening
+        print(f"After flattening: {sliding_windows.shape}")  # Print shape after flattening
+
         validity = self.fc(sliding_windows)
+        print(f"Final output shape: {validity.shape}")  # Print final output shape
+
         return validity
+
 
 class VAEBasedTrendCritic(nn.Module):
     def __init__(self, input_dim, latent_dim, vae_hidden_dim=128):
@@ -91,29 +94,33 @@ class VAEBasedTrendCritic(nn.Module):
 
     def encode(self, x):
         h1 = F.relu(self.fc1(x))
+        print(f"Shape after first layer (fc1): {h1.shape}")  # Print shape
         return self.fc21(h1), self.fc22(h1)
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mu + eps * std
-
-    def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        return torch.sigmoid(self.fc4(h3))
+        z = mu + eps * std
+        print(f"Shape after reparameterization (z): {z.shape}")  # Print shape
+        return z
 
     def forward(self, rating_matrix):
         # Replace 0s with NaN
         rating_matrix = rating_matrix.clone()
         rating_matrix[rating_matrix == 0] = float('nan')
 
+        # Normalize the rating matrix
+        rating_matrix = rating_matrix / torch.nanmax(rating_matrix)  # Normalize to [0, 1]
+
         # Encode the ratings using VAE
         mu, logvar = self.encode(rating_matrix)
         z = self.reparameterize(mu, logvar)
 
-        # Use DIANA for clustering (assume latent representations are the input)
+        # Convert to numpy
         z_np = z.detach().cpu().numpy()
-        clustering = AgglomerativeClustering(affinity='precomputed', linkage='complete')
+
+        # Use DIANA for clustering (assume latent representations are the input)
+        clustering = AgglomerativeClustering(metric='precomputed', linkage='complete')
         dist_matrix = 1 - cosine_similarity(z_np)
         cluster_labels = clustering.fit_predict(dist_matrix)
 
@@ -127,3 +134,4 @@ class VAEBasedTrendCritic(nn.Module):
         cluster_centroids = torch.tensor(cluster_centroids, dtype=torch.float32)
         validity = self.critic(cluster_centroids)
         return validity
+

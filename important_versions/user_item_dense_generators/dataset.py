@@ -54,9 +54,8 @@ class UserItemInteractionDataset(Dataset):
 
     def __getitem__(self, idx):
         user_data = self._get_user_data(idx)  # Collect data for the single user
-        # Convert each 2D tensor (user vector, item vector, interaction) to 3D by adding a batch dimension
-        user_data_3d = {key: tensor.unsqueeze(0) for key, tensor in user_data.items()}
-        return user_data_3d
+        # Return 2D tensors without adding an extra batch dimension
+        return user_data
 
     def _get_user_data(self, user_idx):
         return {

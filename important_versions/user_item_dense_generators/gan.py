@@ -53,12 +53,14 @@ class WGAN:
             for i, real_batch in enumerate(real_data):
                 # Extract the interaction matrix or the specific tensor you need
                 real_batch_tensor = real_batch['interaction']  # Adjust the key accordingly
+                print(f"Shape of real_batch_tensor: {real_batch_tensor.shape}")
                 batch_size = real_batch_tensor.size(0)
 
                 # Train critics multiple times per generator update
                 for _ in range(critic_steps):
                     # Training the critics with real data
                     real_individual_scores = self.individual_critic(real_batch_tensor)
+                    print(f"Real individual scores shape: {real_individual_scores.shape}")
                     real_group_scores = self.group_critic(real_batch_tensor)
 
                     # Generate fake data
