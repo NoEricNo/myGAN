@@ -6,69 +6,64 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
+
 class UserAttention(nn.Module):
-    def __init__(self, num_items, embed_dim, num_heads):
+    def __init__(self, num_items, embed_dim, num_heads, window_size):
         super(UserAttention, self).__init__()
+        self.window_size = window_size
         self.attention = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads)
-        self.embedding = nn.Linear(num_items, embed_dim)  # Ensure embed_dim is consistent
+        self.embedding = nn.Linear(num_items, embed_dim)
 
     def forward(self, rating_matrix):
-        print(f"Shape before embedding: {rating_matrix.shape}")  # Print input shape
-        embedded_users = self.embedding(rating_matrix)
-        print(f"Shape after embedding: {embedded_users.shape}")  # Print output shape
-        # Transpose to (num_users, batch_size, embed_dim) for attention
-        embedded_users = embedded_users.transpose(0, 1)
-        print(f"Shape after transpose: {embedded_users.shape}")  # Print shape after transpose
+        # rating_matrix shape: (batch_size, num_items)
+        batch_size, num_items = rating_matrix.shape
+
+        # Embed each user's rating vector
+        embedded_users = self.embedding(rating_matrix)  # Shape: (batch_size, embed_dim)
+        print(f"Shape after embedding: {embedded_users.shape}")  # Shape: [batch_size, embed_dim]
+
+        # Reshape to introduce window_size (sequence_length)
+        # For attention, we want shape [window_size, batch_size, embed_dim]
+        # For simplicity, assuming window_size <= batch_size
+        embedded_users = embedded_users.view(self.window_size, batch_size // self.window_size, -1)
+        print(
+            f"Shape after introducing window size: {embedded_users.shape}")  # Shape: [window_size, num_windows, embed_dim]
+
         # Apply self-attention across users
         attn_output, _ = self.attention(embedded_users, embedded_users, embedded_users)
-        print(f"Shape after attention: {attn_output.shape}")  # Print shape after attention
-        # Transpose back to (batch_size, num_users, embed_dim)
-        attn_output = attn_output.transpose(0, 1)
+        print(f"Shape after attention: {attn_output.shape}")  # Shape: [window_size, num_windows, embed_dim]
+
         return attn_output
 
 
 class UserRatingCritic(nn.Module):
-    def __init__(self, num_items, window_size=5, embed_dim=64, num_heads=4):
+    def __init__(self, num_items, embed_dim, num_heads, window_size):
         super(UserRatingCritic, self).__init__()
-        self.window_size = window_size  # How many users to compare simultaneously
-        self.attention_layer = UserAttention(num_items, embed_dim, num_heads)
+        self.window_size = window_size
+        self.attention_layer = UserAttention(num_items, embed_dim, num_heads, window_size)
         self.fc = nn.Sequential(
             spectral_norm(nn.Linear(embed_dim * window_size, 128)),
             nn.LeakyReLU(0.2),
             spectral_norm(nn.Linear(128, 64)),
             nn.LeakyReLU(0.2),
-            spectral_norm(nn.Linear(64, 1))  # No Sigmoid, output raw score
+            spectral_norm(nn.Linear(64, 1))
         )
 
     def forward(self, rating_matrix):
-        print(f"Initial shape: {rating_matrix.shape}")  # Print initial shape
+        # rating_matrix shape: (batch_size, num_items)
+        print(f"Initial shape: {rating_matrix.shape}")
 
-        # Apply attention across users
         attn_output = self.attention_layer(rating_matrix)
-        print(f"Shape after attention: {attn_output.shape}")  # Print shape after attention
+        print(f"Shape after attention: {attn_output.shape}")  # [window_size, num_windows, embed_dim]
 
-        # Slide over the batch dimension to compare groups of users
-        sliding_windows = []
-        batch_size = attn_output.size(0)
+        # Flatten the attention output for feeding into the fully connected layers
+        attn_output = attn_output.view(-1, self.window_size * attn_output.shape[-1])
+        print(f"Shape after flattening: {attn_output.shape}")  # [num_windows, window_size * embed_dim]
 
-        # Adjusting the sliding window to correctly handle 2D data
-        for i in range(batch_size - self.window_size + 1):  # Sliding over total users in batch
-            user_window = attn_output[i:i + self.window_size, :]  # Index only on two dimensions
-            #print(f"Shape of user_window: {user_window.shape}")  # Print shape of the sliding window
-            user_window = user_window.view(self.window_size, -1)  # Flatten the window if needed
-            sliding_windows.append(user_window)
-
-        sliding_windows = torch.stack(sliding_windows)
-        print(f"After sliding window: {sliding_windows.shape}")  # Print shape after stacking windows
-
-        sliding_windows = sliding_windows.view(-1, self.window_size * attn_output.size(-1))  # Ensure correct flattening
-        print(f"After flattening: {sliding_windows.shape}")  # Print shape after flattening
-
-        validity = self.fc(sliding_windows)
-        print(f"Final output shape: {validity.shape}")  # Print final output shape
+        validity = self.fc(attn_output)
+        print(f"Final output shape: {validity.shape}")  # [num_windows, 1]
 
         return validity
-
 
 class VAEBasedTrendCritic(nn.Module):
     def __init__(self, input_dim, latent_dim, vae_hidden_dim=128):
